@@ -72,8 +72,20 @@
             const [editingVendor, setEditingVendor] = useState(null);
             const [showVendorModal, setShowVendorModal] = useState(false);
             const [showBackupMenu, setShowBackupMenu] = useState(false);
-            const [viewingItemsVendor, setViewingItemsVendor] = useState(null); // 用於儲存當前查看明細的廠商
+            const [viewingItemsVendor, setViewingItemsVendor] = useState(null); 
             const fileInputRef = useRef(null);
+
+            // 8 個顏色選項
+            const colorOptions = [
+                { label: '藍色', value: 'bg-blue-500' },
+                { label: '紅色', value: 'bg-red-500' },
+                { label: '綠色', value: 'bg-green-500' },
+                { label: '橘色', value: 'bg-amber-500' },
+                { label: '紫色', value: 'bg-purple-500' },
+                { label: '青色', value: 'bg-cyan-500' },
+                { label: '粉色', value: 'bg-pink-500' },
+                { label: '灰色', value: 'bg-slate-500' }
+            ];
 
             useEffect(() => {
                 localStorage.setItem('restaurant_vendors_v3', JSON.stringify(vendors));
@@ -110,22 +122,31 @@
                 setShowBackupMenu(false);
             };
 
-            const calendarDays = useMemo(() => {
-                const year = currentDate.getFullYear();
-                const month = currentDate.getMonth();
-                const totalDays = new Date(year, month + 1, 0).getDate();
-                const firstDay = new Date(year, month, 1).getDay();
+            // 計算目前日期所在的那一週 (週日到週六)
+            const weekDays = useMemo(() => {
+                const startOfWeek = new Date(currentDate);
+                startOfWeek.setDate(currentDate.getDate() - currentDate.getDay());
+                
                 const days = [];
-                for (let i = 0; i < firstDay; i++) days.push(null);
-                for (let d = 1; d <= totalDays; d++) {
-                    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                    const dayOfWeek = (firstDay + d - 1) % 7;
+                for (let i = 0; i < 7; i++) {
+                    const d = new Date(startOfWeek);
+                    d.setDate(startOfWeek.getDate() + i);
+                    
+                    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                    const dayOfWeek = d.getDay();
+                    
                     const dayEvents = vendors.flatMap(v => {
                         const key = `${dateStr}-${v.id}`;
                         return (v.orderDays.includes(dayOfWeek) && !exclusions.includes(key)) 
                             ? [{ color: v.color, vendor: v.name, dateKey: key }] : [];
                     });
-                    days.push({ day: d, events: dayEvents });
+                    
+                    days.push({ 
+                        day: d.getDate(), 
+                        month: d.getMonth() + 1,
+                        dateStr: dateStr,
+                        events: dayEvents 
+                    });
                 }
                 return days;
             }, [currentDate, vendors, exclusions]);
@@ -138,6 +159,12 @@
 
             const resetExclusions = () => {
                 if (confirm('要恢復所有手動取消的行程嗎？')) setExclusions([]);
+            };
+
+            const changeWeek = (offset) => {
+                const newDate = new Date(currentDate);
+                newDate.setDate(currentDate.getDate() + (offset * 7));
+                setCurrentDate(newDate);
             };
 
             return (
@@ -175,36 +202,34 @@
                     </header>
 
                     <main className="max-w-6xl mx-auto p-3 md:p-6 space-y-4">
-                        {/* 日曆區 */}
+                        {/* 日曆區 (單週顯示) */}
                         <section className="bg-white rounded-2xl shadow-sm border overflow-hidden">
                             <div className="p-4 border-b flex items-center justify-between bg-slate-50/50">
-                                <h2 className="font-bold flex items-center gap-2"><Icon name="calendar" className="text-blue-500" /> 排程看板</h2>
+                                <h2 className="font-bold flex items-center gap-2"><Icon name="calendar" className="text-blue-500" /> 本週叫貨排程</h2>
                                 <div className="flex items-center gap-3">
-                                    <span className="font-bold text-sm">{currentDate.getFullYear()} / {currentDate.getMonth() + 1}</span>
                                     <div className="flex border rounded-lg bg-white shadow-sm">
-                                        <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))} className="p-1.5 border-r active:bg-slate-100"><Icon name="chevron-left" size={18}/></button>
-                                        <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))} className="p-1.5 active:bg-slate-100"><Icon name="chevron-right" size={18}/></button>
+                                        <button onClick={() => changeWeek(-1)} className="p-1.5 border-r active:bg-slate-100"><Icon name="chevron-left" size={18}/></button>
+                                        <button onClick={() => changeWeek(1)} className="p-1.5 active:bg-slate-100"><Icon name="chevron-right" size={18}/></button>
                                     </div>
                                 </div>
                             </div>
                             <div className="grid grid-cols-7 text-center border-b bg-slate-50/30 text-[10px] font-bold text-slate-400 py-1.5">
                                 {['日', '一', '二', '三', '四', '五', '六'].map(d => <div key={d}>{d}</div>)}
                             </div>
-                            <div className="grid grid-cols-7 auto-rows-[minmax(70px,auto)]">
-                                {calendarDays.map((dayObj, i) => (
-                                    <div key={i} className={`border-r border-b p-1 min-h-[70px] ${!dayObj ? 'bg-slate-50/50' : ''}`}>
-                                        {dayObj && (
-                                            <>
-                                                <span className={`text-[10px] font-bold ${[0,6].includes(i%7) ? 'text-red-400' : 'text-slate-400'}`}>{dayObj.day}</span>
-                                                <div className="mt-1 space-y-1">
-                                                    {dayObj.events.map((ev, idx) => (
-                                                        <button key={idx} onClick={() => handleRemoveSingleOrder(ev.dateKey, ev.vendor)} className={`${ev.color} w-full text-white text-[9px] py-0.5 px-1 rounded-sm truncate shadow-sm active:opacity-70`}>
-                                                            {ev.vendor}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </>
-                                        )}
+                            <div className="grid grid-cols-7 auto-rows-[minmax(120px,auto)]">
+                                {weekDays.map((dayObj, i) => (
+                                    <div key={i} className={`border-r last:border-r-0 p-1 min-h-[120px] ${dayObj.dateStr === new Date().toISOString().split('T')[0] ? 'bg-blue-50/30' : ''}`}>
+                                        <div className="flex flex-col items-center">
+                                            <span className={`text-[10px] font-bold ${[0,6].includes(i%7) ? 'text-red-400' : 'text-slate-400'}`}>{dayObj.day}</span>
+                                            <span className="text-[8px] text-slate-300 scale-75 uppercase">{dayObj.month}月</span>
+                                        </div>
+                                        <div className="mt-1 space-y-1">
+                                            {dayObj.events.map((ev, idx) => (
+                                                <button key={idx} onClick={() => handleRemoveSingleOrder(ev.dateKey, ev.vendor)} className={`${ev.color} w-full text-white text-[9px] py-1 px-1 rounded-md truncate shadow-sm active:opacity-70 flex items-center justify-center`}>
+                                                    {ev.vendor}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -212,7 +237,7 @@
 
                         {/* 廠商管理 */}
                         <section className="bg-white rounded-2xl shadow-sm border p-4">
-                            <h3 className="text-md font-bold mb-3 flex items-center gap-2"><Icon name="users" className="text-slate-400" size={18}/> 廠商列表</h3>
+                            <h3 className="text-md font-bold mb-3 flex items-center gap-2"><Icon name="users" className="text-slate-400" size={18}/> 廠商管理</h3>
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                                 {vendors.map(v => (
                                     <div key={v.id} className="p-3 rounded-xl border bg-slate-50/50 flex justify-between items-center">
@@ -229,11 +254,11 @@
                             </div>
                         </section>
 
-                        {/* 商品內容明細 - 調整為點擊查看 */}
+                        {/* 商品內容明細 */}
                         <section className="bg-white rounded-2xl shadow-sm border overflow-hidden">
                             <div className="p-4 border-b border-slate-100 bg-slate-50/50">
                                 <h2 className="font-bold flex items-center gap-2">
-                                    <Icon name="package" className="text-amber-500" size={20} /> 商品叫貨明細 (點擊廠商查看)
+                                    <Icon name="package" className="text-amber-500" size={20} /> 商品叫貨明細 (點擊查看內容)
                                 </h2>
                             </div>
                             <div className="p-3 grid grid-cols-1 gap-2">
@@ -247,20 +272,17 @@
                                             <div className={`w-2 h-8 rounded-full ${vendor.color}`}></div>
                                             <div>
                                                 <div className="font-bold text-slate-800">{vendor.name}</div>
-                                                <div className="text-[10px] text-slate-400 truncate max-w-[200px]">點擊展開品項明細</div>
+                                                <div className="text-[10px] text-slate-400">點擊顯示品項清單</div>
                                             </div>
                                         </div>
                                         <Icon name="chevron-right" size={18} className="text-slate-300 group-hover:text-blue-400 transition-colors" />
                                     </button>
                                 ))}
-                                {vendors.length === 0 && (
-                                    <div className="p-10 text-center text-slate-400 text-sm italic">目前無廠商資料</div>
-                                )}
                             </div>
                         </section>
                     </main>
 
-                    {/* 商品明細彈窗 (Modal) */}
+                    {/* 商品明細彈窗 */}
                     {viewingItemsVendor && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
                             <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
@@ -279,12 +301,12 @@
                                             {viewingItemsVendor.items || "尚未設定叫貨品項"}
                                         </pre>
                                     </div>
-                                    <div className="mt-4 text-center text-xs text-slate-400">長按文字可進行選取與複製</div>
+                                    <div className="mt-4 text-center text-xs text-slate-400 italic">長按文字可選取並複製</div>
                                     <button 
                                         onClick={() => setViewingItemsVendor(null)}
                                         className="w-full mt-4 py-3 bg-slate-900 text-white font-bold rounded-xl active:scale-95 transition-all shadow-lg"
                                     >
-                                        關閉視窗
+                                        確定
                                     </button>
                                 </div>
                             </div>
@@ -294,8 +316,8 @@
                     {/* 編輯廠商 Modal */}
                     {showVendorModal && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
-                            <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in slide-in-from-bottom duration-300">
-                                <div className="flex justify-between items-center mb-6">
+                            <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
+                                <div className="flex justify-between items-center mb-6 sticky top-0 bg-white py-2">
                                     <h3 className="text-xl font-bold">{editingVendor ? '編輯' : '新增'}廠商資料</h3>
                                     <button onClick={() => setShowVendorModal(false)} className="p-2 bg-slate-100 rounded-full"><Icon name="x" size={20}/></button>
                                 </div>
@@ -318,14 +340,18 @@
                                             <input name="name" defaultValue={editingVendor?.name} placeholder="輸入廠商名" required className="w-full border-2 border-slate-100 p-3 rounded-xl focus:border-blue-500 outline-none" />
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-bold mb-1 text-slate-600">標記顏色</label>
-                                            <select name="color" defaultValue={editingVendor?.color || 'bg-blue-500'} className="w-full border-2 border-slate-100 p-3 rounded-xl bg-white">
-                                                <option value="bg-blue-500">藍色</option>
-                                                <option value="bg-red-500">紅色</option>
-                                                <option value="bg-green-500">綠色</option>
-                                                <option value="bg-amber-500">橘色</option>
-                                                <option value="bg-purple-500">紫色</option>
-                                            </select>
+                                            <label className="block text-sm font-bold mb-1 text-slate-600">標記顏色 (8色可選)</label>
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {colorOptions.map(option => (
+                                                    <label key={option.value} className="relative cursor-pointer">
+                                                        <input type="radio" name="color" value={option.value} defaultChecked={editingVendor?.color === option.value || (!editingVendor && option.value === 'bg-blue-500')} className="peer hidden" />
+                                                        <div className={`w-full aspect-square rounded-xl ${option.value} border-4 border-transparent peer-checked:border-white peer-checked:ring-2 peer-checked:ring-blue-500 flex items-center justify-center transition-all`}>
+                                                            <div className="hidden peer-checked:block text-white"><Icon name="check" size={16}/></div>
+                                                        </div>
+                                                        <span className="text-[10px] text-center block mt-1 text-slate-400">{option.label}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
                                         </div>
                                         <div>
                                             <label className="block text-sm font-bold mb-1 text-slate-600">叫貨週期</label>
@@ -342,10 +368,10 @@
                                         </div>
                                         <div>
                                             <label className="block text-sm font-bold mb-1 text-slate-600">叫貨品項 (每行一項)</label>
-                                            <textarea name="items" defaultValue={editingVendor?.items} placeholder="例如：\n高麗菜 2籃\n番茄 1箱" className="w-full border-2 border-slate-100 p-3 rounded-xl focus:border-blue-500 outline-none" rows="4"></textarea>
+                                            <textarea name="items" defaultValue={editingVendor?.items} placeholder="例如：\n青江菜 10斤\n番茄 5盒" className="w-full border-2 border-slate-100 p-3 rounded-xl focus:border-blue-500 outline-none" rows="4"></textarea>
                                         </div>
                                         <div className="flex gap-3 pt-4">
-                                            <button type="submit" className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-100 active:scale-95 transition-all">儲存並關閉</button>
+                                            <button type="submit" className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-100 active:scale-95 transition-all">儲存設定</button>
                                         </div>
                                     </div>
                                 </form>
