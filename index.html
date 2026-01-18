@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>餐廳雲端管理系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f1f5f9; }
+        .app-card:active { transform: scale(0.95); }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+    <header class="bg-slate-900 text-white p-8 pt-12 pb-16">
+        <h1 class="text-3xl font-black mb-2 tracking-tight">管理中控台</h1>
+        <p class="text-slate-400 text-sm font-bold flex items-center gap-2">
+            <i data-lucide="cloud" class="w-4 h-4 text-blue-400"></i> Firebase 雲端同步已啟動
+        </p>
+    </header>
+
+    <main class="flex-1 -mt-8 px-6 space-y-4">
+        
+        <a href="order.html" class="app-card block bg-white p-6 rounded-[2rem] shadow-lg flex items-center gap-6 border border-slate-100 transition-all">
+            <div class="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600">
+                <i data-lucide="shopping-cart" class="w-8 h-8"></i>
+            </div>
+            <div>
+                <h2 class="text-xl font-black text-slate-800">叫貨系統</h2>
+                <p class="text-slate-400 text-sm font-bold mt-1">廠商訂單與即時回報</p>
+            </div>
+            <i data-lucide="chevron-right" class="ml-auto text-slate-300"></i>
+        </a>
+
+        <a href="inventory.html" class="app-card block bg-white p-6 rounded-[2rem] shadow-lg flex items-center gap-6 border border-slate-100 transition-all">
+            <div class="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600">
+                <i data-lucide="calculator" class="w-8 h-8"></i>
+            </div>
+            <div>
+                <h2 class="text-xl font-black text-slate-800">盤點計算</h2>
+                <p class="text-slate-400 text-sm font-bold mt-1">補貨數量自動化計算</p>
+            </div>
+            <i data-lucide="chevron-right" class="ml-auto text-slate-300"></i>
+        </a>
+
+        <a href="shifts.html" class="app-card block bg-white p-6 rounded-[2rem] shadow-lg flex items-center gap-6 border border-slate-100 transition-all">
+            <div class="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600">
+                <i data-lucide="calendar" class="w-8 h-8"></i>
+            </div>
+            <div>
+                <h2 class="text-xl font-black text-slate-800">智能排班</h2>
+                <p class="text-slate-400 text-sm font-bold mt-1">人員畫休與自動排班</p>
+            </div>
+            <i data-lucide="chevron-right" class="ml-auto text-slate-300"></i>
+        </a>
+
+    </main>
+
+    <footer class="p-8 text-center">
+        <div class="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-4">Restaurant Management v1.0</div>
+        <div class="flex justify-center gap-4 text-slate-400">
+            <i data-lucide="settings" class="w-5 h-5"></i>
+            <i data-lucide="shield-check" class="w-5 h-5 text-emerald-500"></i>
+            <i data-lucide="users" class="w-5 h-5"></i>
+        </div>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>
