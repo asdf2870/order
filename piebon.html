@@ -1,201 +1,362 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  ChevronLeft, ChevronRight, Lock, Unlock, 
-  Calendar, Clock, AlertCircle, UserPlus, X, Trash2, Edit3, Plus, Eye, EyeOff
-} from 'lucide-react';
-import { initializeApp } from "firebase/app";
-import { getDatabase, ref, onValue, update } from "firebase/database";
-
-// --- Firebase 配置 ---
-const firebaseConfig = {
-    apiKey: "AIzaSyDS7PQrDh05bIGu9WYCcFM0s1GvhzDwz4M",
-    authDomain: "order-718b1.firebaseapp.com",
-    projectId: "order-718b1",
-    storageBucket: "order-718b1.firebasestorage.app",
-    messagingSenderId: "454465000018",
-    appId: "1:454465000018:web:ac7c787ba3e423a2a1458b",
-    databaseURL: "https://order-718b1-default-rtdb.asia-southeast1.firebasedatabase.app/"
-};
-
-// 初始化 Firebase
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
-const ADMIN_PASSCODE = "0418";
-
-// 工具函數：解析時間計算時數
-const parseShiftTime = (timeStr) => {
-  if (!timeStr || typeof timeStr !== 'string') return { start: 0, end: 0, hours: 0 };
-  const parts = timeStr.split('-');
-  if (parts.length !== 2) return { start: 0, end: 0, hours: 0 };
-  
-  const toDec = (s) => {
-    if (s.includes(':')) {
-      const [h, m] = s.split(':').map(Number);
-      return h + (m / 60);
-    }
-    return Number(s);
-  };
-
-  let start = toDec(parts[0]);
-  let end = toDec(parts[1]);
-  if (end < start) end += 24; 
-  return { start, end, hours: end - start };
-};
-
-const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
-const weekNames = ['一', '二', '三', '四', '五', '六', '日'];
-const getWeekdayIndex = (year, month, day) => {
-  let dayOfWeek = new Date(year, month, day).getDay(); 
-  return dayOfWeek === 0 ? 6 : dayOfWeek - 1; 
-};
-
-const App = () => {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [view, setView] = useState('admin-view');
-  const [isLocked, setIsLocked] = useState(true); 
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authPassword, setAuthPassword] = useState("");
-  const [customTime, setCustomTime] = useState("");
-  const [hideUnavail, setHideUnavail] = useState(false); 
-  const [loading, setLoading] = useState(true);
-
-  // 資料狀態
-  const [staff, setStaff] = useState([]);
-  const [unavailabilities, setUnavailabilities] = useState({});
-  const [schedules, setSchedules] = useState({});
-
-  const [popover, setPopover] = useState(null); 
-  const [editingStaff, setEditingStaff] = useState(null);
-
-  // 1. 監聽 Firebase 雲端資料同步
-  useEffect(() => {
-    const dataRef = ref(db, 'shift_system');
-    const unsubscribe = onValue(dataRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setStaff(data.staff || []);
-        setUnavailabilities(data.unavailabilities || {});
-        setSchedules(data.schedules || {});
-      }
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // 2. 統一雲端同步方法
-  const syncToCloud = (newStaff, newUnavail, newSched) => {
-    update(ref(db, 'shift_system'), {
-      staff: newStaff,
-      unavailabilities: newUnavail,
-      schedules: newSched
-    });
-  };
-
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-  const daysCount = getDaysInMonth(year, month);
-  const dates = Array.from({ length: daysCount }, (_, i) => i + 1);
-  const sortedStaff = [...staff].sort((a, b) => (a.order || 99) - (b.order || 99));
-
-  const statistics = useMemo(() => {
-    const stats = {};
-    sortedStaff.forEach(s => {
-      let totalHours = 0;
-      let scheduledDays = 0;
-      dates.forEach(d => {
-        const shift = schedules[`${s.id}-${d}`];
-        if (shift) {
-          totalHours += parseShiftTime(shift).hours;
-          scheduledDays++;
-        }
-      });
-      stats[s.id] = { hours: totalHours.toFixed(1), unscheduled: daysCount - scheduledDays };
-    });
-    return stats;
-  }, [schedules, sortedStaff, daysCount]);
-
-  const handleAuthSubmit = () => {
-    if (authPassword === ADMIN_PASSCODE) {
-      setIsLocked(false);
-      setShowAuthModal(false);
-      setAuthPassword("");
-    } else { alert("密碼錯誤！"); }
-  };
-
-  const checkConflict = (staffId, date, shiftStr) => {
-    if (!shiftStr) return false;
-    const key = `${staffId}-${year}-${month}-${date}`;
-    const unavail = unavailabilities[key];
-    if (!unavail) return false;
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>智能排班系統 - 雲端同步版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     
-    if (unavail.types?.includes('全天休')) return true;
-    const { start, end } = parseShiftTime(shiftStr);
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
-    if (unavail.types?.includes('早休')) { if (start < 16) return true; }
-    if (unavail.types?.includes('晚休')) {
-      if (start < 20 && end > 16) return true;
-    }
-    if (unavail.types?.includes('夜休')) { if (end > 23) return true; }
-    if (unavail.canWorkUntil && end > Number(unavail.canWorkUntil)) return true;
-    if (unavail.cannotWorkAfter && start < Number(unavail.cannotWorkAfter)) return true;
-    
-    return false;
-  };
-
-  const getUnavailDisplayData = (data) => {
-    if (!data || hideUnavail) return null;
-    let textParts = [];
-    if (data.types?.includes('全天休')) return { text: '全休', bg: 'rgba(71, 85, 105, 0.9)', color: '#fff', isFull: true };
-    if (data.types?.length > 0) {
-      const typeMap = { '早休': '早', '晚休': '晚', '夜休': '夜' };
-      textParts.push(data.types.map(t => typeMap[t] || t).join('/'));
-    }
-    if (data.canWorkUntil) textParts.push(`到${data.canWorkUntil}點`);
-    if (data.cannotWorkAfter) textParts.push(`${data.cannotWorkAfter}點後可`);
-    if (textParts.length === 0 && !data.note) return null;
-    return { text: textParts.join('\n') || (data.note ? '有備註' : ''), bg: 'rgba(254, 226, 226, 0.6)', color: '#dc2626' };
-  };
-
-  const SHIFT_OPTIONS = {
-    'morning': ['08-14', '08-16', '10-17', '10-16'],
-    'evening': ['16-23', '17-23', '18-23', '12-20'],
-    'night': ['23-05', '00-08']
-  };
-
-  if (loading) return <div className="h-screen flex items-center justify-center font-black text-slate-400 animate-pulse">排班資料同步中...</div>;
-
-  return (
-    <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-900 pb-20">
-      {/* 這裡保留你原本所有的 JSX 介面內容，僅修改資料操作部分 */}
-      {/* ... (省略重複的導航欄、表格、Modal JSX，這些都維持不變) ... */}
-      
-      {/* 關鍵：在所有修改資料的地方調用 syncToCloud */}
-      {/* 例如在新增/編輯人員的儲存按鈕： */}
-      {/* onClick={() => {
-          const newStaff = staff.some(s => s.id === editingStaff.id) ? staff.map(s => s.id === editingStaff.id ? editingStaff : s) : [...staff, editingStaff];
-          syncToCloud(newStaff, unavailabilities, schedules);
-          setEditingStaff(null);
-        }}
-      */}
-
-      {/* 或者是畫休存檔按鈕： */}
-      {/* onClick={() => {
-          syncToCloud(staff, unavailabilities, schedules);
-          setPopover(null);
-        }}
-      */}
-
-      {/* 為了保持響應式，建議在組件內的對應操作函數中直接觸發 syncToCloud */}
-      
-      <style dangerouslySetInnerHTML={{ __html: `
+    <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;900&display=swap');
-        body { font-family: 'Noto Sans TC', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { font-family: 'Noto Sans TC', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #F8FAFC; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}} />
-    </div>
-  );
-};
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-export default App;
+    <script type="text/babel">
+        // --- Firebase 配置 ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyDS7PQrDh05bIGu9WYCcFM0s1GvhzDwz4M",
+            authDomain: "order-718b1.firebaseapp.com",
+            projectId: "order-718b1",
+            storageBucket: "order-718b1.firebasestorage.app",
+            messagingSenderId: "454465000018",
+            appId: "1:454465000018:web:ac7c787ba3e423a2a1458b",
+            databaseURL: "https://order-718b1-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        };
+
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        const { useState, useEffect, useMemo } = React;
+
+        // Lucide Icon 組件
+        const Icon = ({ name, size = 18, className = "" }) => {
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons({
+                        attrs: { class: className, 'stroke-width': 2.5, width: size, height: size },
+                        nameAttr: 'data-lucide'
+                    });
+                }
+            }, [name, size, className]);
+            return <i data-lucide={name} className={className}></i>;
+        };
+
+        const ADMIN_PASSCODE = "0418";
+
+        // 時間轉換工具
+        const parseShiftTime = (timeStr) => {
+            if (!timeStr || typeof timeStr !== 'string') return { start: 0, end: 0, hours: 0 };
+            const parts = timeStr.split('-');
+            if (parts.length !== 2) return { start: 0, end: 0, hours: 0 };
+            const toDec = (s) => {
+                if (s.includes(':')) {
+                    const [h, m] = s.split(':').map(Number);
+                    return h + (m / 60);
+                }
+                return Number(s);
+            };
+            let start = toDec(parts[0]);
+            let end = toDec(parts[1]);
+            if (end < start) end += 24; 
+            return { start, end, hours: end - start };
+        };
+
+        const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+        const weekNames = ['一', '二', '三', '四', '五', '六', '日'];
+        const getWeekdayIndex = (year, month, day) => {
+            let dayOfWeek = new Date(year, month, day).getDay(); 
+            return dayOfWeek === 0 ? 6 : dayOfWeek - 1; 
+        };
+
+        const App = () => {
+            const [currentDate, setCurrentDate] = useState(new Date());
+            const [view, setView] = useState('admin-view');
+            const [isLocked, setIsLocked] = useState(true); 
+            const [showAuthModal, setShowAuthModal] = useState(false);
+            const [authPassword, setAuthPassword] = useState("");
+            const [customTime, setCustomTime] = useState("");
+            const [hideUnavail, setHideUnavail] = useState(false);
+            const [loading, setLoading] = useState(true);
+
+            // 資料狀態
+            const [staff, setStaff] = useState([]);
+            const [unavailabilities, setUnavailabilities] = useState({});
+            const [schedules, setSchedules] = useState({});
+            const [popover, setPopover] = useState(null); 
+            const [editingStaff, setEditingStaff] = useState(null);
+
+            // 1. 監聽雲端資料
+            useEffect(() => {
+                const dataRef = db.ref('shift_system');
+                dataRef.on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        setStaff(data.staff || []);
+                        setUnavailabilities(data.unavailabilities || {});
+                        setSchedules(data.schedules || {});
+                    }
+                    setLoading(false);
+                });
+                return () => dataRef.off();
+            }, []);
+
+            // 2. 雲端同步
+            const syncToCloud = (newStaff, newUnavail, newSched) => {
+                db.ref('shift_system').set({
+                    staff: newStaff,
+                    unavailabilities: newUnavail,
+                    schedules: newSched
+                });
+            };
+
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            const daysCount = getDaysInMonth(year, month);
+            const dates = Array.from({ length: daysCount }, (_, i) => i + 1);
+            const sortedStaff = [...staff].sort((a, b) => (a.order || 99) - (b.order || 99));
+
+            const statistics = useMemo(() => {
+                const stats = {};
+                sortedStaff.forEach(s => {
+                    let totalHours = 0;
+                    let scheduledDays = 0;
+                    dates.forEach(d => {
+                        const shift = schedules[`${s.id}-${d}`];
+                        if (shift) {
+                            totalHours += parseShiftTime(shift).hours;
+                            scheduledDays++;
+                        }
+                    });
+                    stats[s.id] = { hours: totalHours.toFixed(1), unscheduled: daysCount - scheduledDays };
+                });
+                return stats;
+            }, [schedules, sortedStaff, daysCount]);
+
+            const handleAuthSubmit = () => {
+                if (authPassword === ADMIN_PASSCODE) {
+                    setIsLocked(false);
+                    setShowAuthModal(false);
+                    setAuthPassword("");
+                } else { alert("密碼錯誤！"); }
+            };
+
+            const checkConflict = (staffId, date, shiftStr) => {
+                if (!shiftStr) return false;
+                const key = `${staffId}-${year}-${month}-${date}`;
+                const unavail = unavailabilities[key];
+                if (!unavail) return false;
+                if (unavail.types?.includes('全天休')) return true;
+                const { start, end } = parseShiftTime(shiftStr);
+                if (unavail.types?.includes('早休') && start < 16) return true;
+                if (unavail.types?.includes('晚休') && (start < 20 && end > 16)) return true;
+                if (unavail.types?.includes('夜休') && end > 23) return true;
+                return false;
+            };
+
+            const getUnavailDisplayData = (data) => {
+                if (!data || hideUnavail) return null;
+                if (data.types?.includes('全天休')) return { text: '全休', bg: 'rgba(71, 85, 105, 0.9)', color: '#fff', isFull: true };
+                const typeMap = { '早休': '早', '晚休': '晚', '夜休': '夜' };
+                let text = (data.types || []).map(t => typeMap[t] || t).join('/');
+                if (data.canWorkUntil) text += ` 到${data.canWorkUntil}點`;
+                if (!text && data.note) text = "有備註";
+                return text ? { text, bg: 'rgba(254, 226, 226, 0.6)', color: '#dc2626' } : null;
+            };
+
+            const SHIFT_OPTIONS = {
+                'morning': ['08-14', '08-16', '10-17', '10-16'],
+                'evening': ['16-23', '17-23', '18-23', '12-20'],
+                'night': ['23-05', '00-08']
+            };
+
+            if (loading) return <div className="h-screen flex items-center justify-center font-black text-slate-400">系統載入中...</div>;
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {/* 導覽列 */}
+                    <nav className="bg-white border-b border-slate-100 px-4 py-3 sticky top-0 z-[100] flex justify-between items-center shadow-sm">
+                        <div className="flex items-center gap-2">
+                            <Icon name="calendar" className="text-indigo-600" />
+                            <h1 className="font-black text-sm">雲端排班</h1>
+                        </div>
+                        <div className="flex bg-slate-100 p-1 rounded-xl scale-90">
+                            {[['staff-view', '畫休'], ['admin-view', '排班'], ['staff-manage', '人員']].map(([v, n]) => (
+                                <button key={v} onClick={() => setView(v)} className={`px-4 py-1.5 rounded-lg text-xs font-black ${view === v ? 'bg-white text-indigo-600' : 'text-slate-400'}`}>{n}</button>
+                            ))}
+                        </div>
+                        <button onClick={() => isLocked ? setShowAuthModal(true) : setIsLocked(true)} className={`p-2 rounded-xl border ${isLocked ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-600'}`}>
+                            <Icon name={isLocked ? "lock" : "unlock"} size={16}/>
+                        </button>
+                    </nav>
+
+                    {/* 統計列 */}
+                    {view === 'admin-view' && (
+                        <div className="bg-indigo-900 text-white px-4 py-2 flex overflow-x-auto gap-4 no-scrollbar">
+                            {sortedStaff.map(s => (
+                                <div key={s.id} className="whitespace-nowrap text-[10px] font-bold opacity-80">{s.name}: {statistics[s.id]?.hours}h</div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* 主內容區 */}
+                    <main className="flex-1 p-4 overflow-x-auto">
+                        {view === 'admin-view' && (
+                            <div className="bg-white rounded-3xl border shadow-sm overflow-hidden">
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr>
+                                            <th className="p-2 border-b border-r bg-slate-50 sticky left-0 z-20 min-w-[80px]">人員</th>
+                                            {dates.map(d => (
+                                                <th key={d} className="p-2 border-b border-r min-w-[50px] bg-slate-50">{d}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {sortedStaff.map(s => (
+                                            <tr key={s.id}>
+                                                <td className="p-2 border-b border-r sticky left-0 bg-white font-bold">{s.name}</td>
+                                                {dates.map(d => {
+                                                    const shift = schedules[`${s.id}-${d}`];
+                                                    const isConflict = checkConflict(s.id, d, shift);
+                                                    return (
+                                                        <td key={d} onClick={() => !isLocked && setPopover({ type: 'sched', staff: s, date: d })} 
+                                                            className={`p-2 border-b border-r text-center h-10 ${isConflict ? 'bg-red-100' : (shift ? 'bg-indigo-50 text-indigo-600' : '')}`}>
+                                                            {shift || ""}
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {view === 'staff-manage' && (
+                            <div className="space-y-3">
+                                {!isLocked && <button onClick={() => setEditingStaff({ id: Date.now().toString(), name: '', type: 'full-time', shifts: ['morning', 'evening'], position: '店員', order: staff.length + 1 })} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black">新增人員</button>}
+                                {sortedStaff.map(s => (
+                                    <div key={s.id} className="bg-white p-4 rounded-2xl border flex justify-between items-center">
+                                        <div className="font-black">{s.name} <span className="text-[10px] text-slate-400">{s.position}</span></div>
+                                        {!isLocked && (
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setEditingStaff(s)} className="p-2 text-indigo-600"><Icon name="edit-3"/></button>
+                                                <button onClick={() => { if(confirm('刪除？')) syncToCloud(staff.filter(i=>i.id!==s.id), unavailabilities, schedules) }} className="p-2 text-rose-500"><Icon name="trash-2"/></button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {view === 'staff-view' && (
+                            <div className="grid grid-cols-1 gap-4">
+                                {sortedStaff.map(s => (
+                                    <div key={s.id} className="bg-white p-4 rounded-3xl border">
+                                        <div className="font-black mb-3 text-indigo-600">{s.name} - 畫休</div>
+                                        <div className="grid grid-cols-7 gap-1">
+                                            {dates.map(d => {
+                                                const key = `${s.id}-${year}-${month}-${d}`;
+                                                const unavail = getUnavailDisplayData(unavailabilities[key]);
+                                                return (
+                                                    <button key={d} onClick={() => setPopover({ type: 'unavail', staff: s, date: d })} className={`aspect-square rounded-lg border text-[10px] flex flex-col items-center justify-center ${unavail ? 'bg-rose-100 border-rose-200' : 'bg-slate-50'}`}>
+                                                        <span>{d}</span>
+                                                        {unavail && <span className="text-[8px] text-rose-600 font-bold">{unavail.isFull ? '休' : '畫'}</span>}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </main>
+
+                    {/* 彈出視窗 (排班/畫休/編輯人員) */}
+                    {popover?.type === 'sched' && (
+                        <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2rem] p-6 w-full max-w-xs">
+                                <h3 className="font-black text-center mb-4">{popover.staff.name} ({popover.date}日)</h3>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {popover.staff.shifts?.map(cat => SHIFT_OPTIONS[cat].map(opt => (
+                                        <button key={opt} onClick={() => { 
+                                            const newSched = {...schedules, [`${popover.staff.id}-${popover.date}`]: opt};
+                                            syncToCloud(staff, unavailabilities, newSched);
+                                            setPopover(null);
+                                        }} className="py-2 bg-slate-100 rounded-xl text-xs font-bold">{opt}</button>
+                                    )))}
+                                </div>
+                                <button onClick={() => {
+                                    const newSched = {...schedules}; delete newSched[`${popover.staff.id}-${popover.date}`];
+                                    syncToCloud(staff, unavailabilities, newSched); setPopover(null);
+                                }} className="w-full mt-4 text-rose-500 text-xs font-bold">清除</button>
+                                <button onClick={() => setPopover(null)} className="w-full mt-2 text-slate-400 text-xs font-bold">取消</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {popover?.type === 'unavail' && (
+                        <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2rem] p-6 w-full max-w-xs">
+                                <h3 className="font-black text-center mb-4">{popover.date}日 畫休設定</h3>
+                                <button onClick={() => {
+                                    const key = `${popover.staff.id}-${year}-${month}-${popover.date}`;
+                                    const current = unavailabilities[key] || { types: [] };
+                                    const newUnavail = {...unavailabilities, [key]: {...current, types: current.types?.includes('全天休') ? [] : ['全天休']}};
+                                    syncToCloud(staff, newUnavail, schedules); setPopover(null);
+                                }} className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold mb-2">全天休</button>
+                                <button onClick={() => setPopover(null)} className="w-full py-2 text-slate-400 text-xs font-bold">返回</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {editingStaff && (
+                        <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2rem] p-6 w-full max-w-xs space-y-3">
+                                <input placeholder="姓名" className="w-full p-3 bg-slate-50 rounded-xl" value={editingStaff.name} onChange={e=>setEditingStaff({...editingStaff, name:e.target.value})} />
+                                <input placeholder="職位" className="w-full p-3 bg-slate-50 rounded-xl" value={editingStaff.position} onChange={e=>setEditingStaff({...editingStaff, position:e.target.value})} />
+                                <div className="flex gap-2">
+                                    <button onClick={() => setEditingStaff(null)} className="flex-1 py-3 text-slate-400">取消</button>
+                                    <button onClick={() => {
+                                        const newStaff = staff.some(s=>s.id===editingStaff.id) ? staff.map(s=>s.id===editingStaff.id?editingStaff:s) : [...staff, editingStaff];
+                                        syncToCloud(newStaff, unavailabilities, schedules); setEditingStaff(null);
+                                    }} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl">儲存</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 密碼驗證 */}
+                    {showAuthModal && (
+                        <div className="fixed inset-0 bg-slate-900/90 z-[300] flex items-center justify-center p-4 backdrop-blur-sm">
+                            <div className="bg-white rounded-[2rem] p-8 w-full max-w-xs text-center">
+                                <h3 className="font-black mb-4">管理員解鎖</h3>
+                                <input type="password" autoFocus className="w-full p-4 bg-slate-100 rounded-2xl text-center text-2xl font-black outline-none border-2 focus:border-indigo-500" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleAuthSubmit()} />
+                                <div className="flex gap-2 mt-4">
+                                    <button onClick={()=>setShowAuthModal(false)} className="flex-1 text-slate-400 font-bold">取消</button>
+                                    <button onClick={handleAuthSubmit} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold">解鎖</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
