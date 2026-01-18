@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>盤點補貨計算工具 - 簡約統計版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        body { 
+            font-family: 'Noto Sans TC', sans-serif; 
+            -webkit-tap-highlight-color: transparent;
+            background-color: #f8fafc;
+        }
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const Icon = ({ name, size = 18, className = "" }) => {
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons({
+                        attrs: {
+                            class: className,
+                            'stroke-width': 2.5,
+                            width: size,
+                            height: size
+                        },
+                        nameAttr: 'data-lucide'
+                    });
+                }
+            }, [name, size, className]);
+            return <i data-lucide={name} className={className}></i>;
+        };
+
+        const App = () => {
+            const [mode, setMode] = useState('inventory'); 
+            const [dayType, setDayType] = useState('weekday'); 
+            const [items, setItems] = useState(() => {
+                const saved = localStorage.getItem('restaurant_inventory_items_v4');
+                return saved ? JSON.parse(saved) : [];
+            });
+            const [stockCounts, setStockCounts] = useState({});
+            const [showCopySuccess, setShowCopySuccess] = useState(false);
+
+            useEffect(() => {
+                localStorage.setItem('restaurant_inventory_items_v4', JSON.stringify(items));
+            }, [items]);
+
+            const addItem = () => {
+                const newItem = { id: Date.now(), name: '', weekdayMin: 0, weekendMin: 0, unit: '', shouldRound: false };
+                setItems([...items, newItem]);
+                setMode('settings');
+            };
+
+            const updateItem = (id, field, value) => {
+                setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
+            };
+
+            const deleteItem = (id) => {
+                if (confirm('確定刪除此品項？')) setItems(items.filter(item => item.id !== id));
+            };
+
+            const calculateNeed = (item, currentStockStr) => {
+                const currentStock = parseFloat(currentStockStr || 0);
+                const min = dayType === 'weekday' ? item.weekdayMin : item.weekendMin;
+                let need = min - currentStock;
+                if (need <= 0 || isNaN(need)) return 0;
+                return item.shouldRound ? Math.round(need) : parseFloat(need.toFixed(2));
+            };
+
+            // 取得目前所有需要補貨的品項數據
+            const orderList = useMemo(() => {
+                return items
+                    .map(item => {
+                        const need = calculateNeed(item, stockCounts[item.id]);
+                        return need > 0 ? { name: item.name, need, unit: item.unit } : null;
+                    })
+                    .filter(Boolean);
+            }, [items, stockCounts, dayType]);
+
+            const copyOrder = () => {
+                const label = dayType === 'weekday' ? '平日' : '假日';
+                const summary = orderList.map(i => `${i.name}: 補 ${i.need} ${i.unit}`).join('\n');
+                const text = summary ? `【${label}補貨清單】\n${summary}` : "無需補貨";
+                
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                setShowCopySuccess(true);
+                setTimeout(() => setShowCopySuccess(false), 2000);
+            };
+
+            const clearCounts = () => {
+                if(confirm('確定要清空目前所有輸入的數值嗎？')) setStockCounts({});
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col max-w-2xl mx-auto bg-white shadow-2xl overflow-hidden">
+                    {/* Header: 緊湊版 */}
+                    <header className="bg-slate-900 text-white p-4 sticky top-0 z-20 shadow-lg">
+                        <div className="flex justify-between items-center mb-3">
+                            <h1 className="text-lg font-bold flex items-center gap-2 tracking-tight">
+                                <Icon name="calculator" className="text-blue-400" size={20} /> 補貨計算
+                            </h1>
+                            <div className="flex gap-2">
+                                {mode === 'inventory' && (
+                                    <button onClick={clearCounts} className="p-2 bg-slate-800 rounded-lg text-slate-400 active:text-white transition-colors">
+                                        <Icon name="rotate-ccw" size={16} />
+                                    </button>
+                                )}
+                                <button 
+                                    onClick={() => setMode(mode === 'inventory' ? 'settings' : 'inventory')}
+                                    className="bg-blue-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 active:scale-95 transition-all shadow-md shadow-blue-900/20"
+                                >
+                                    <Icon name={mode === 'inventory' ? "settings" : "check"} size={14} />
+                                    {mode === 'inventory' ? "管理" : "完成"}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex bg-slate-800 p-1 rounded-lg">
+                            <button onClick={() => setDayType('weekday')} className={`flex-1 py-1.5 rounded-md text-xs font-bold transition-all ${dayType === 'weekday' ? 'bg-slate-700 text-blue-400 shadow-sm' : 'text-slate-500'}`}>平日 (一~五)</button>
+                            <button onClick={() => setDayType('weekend')} className={`flex-1 py-1.5 rounded-md text-xs font-bold transition-all ${dayType === 'weekend' ? 'bg-slate-700 text-orange-400 shadow-sm' : 'text-slate-500'}`}>假日 (六~日)</button>
+                        </div>
+                    </header>
+
+                    <main className="flex-1 overflow-y-auto custom-scrollbar p-3">
+                        {mode === 'inventory' ? (
+                            <div className="divide-y divide-slate-100">
+                                {items.length === 0 ? (
+                                    <div className="py-20 text-center text-slate-400 text-sm italic">請先前往管理新增品項</div>
+                                ) : (
+                                    items.map(item => {
+                                        const need = calculateNeed(item, stockCounts[item.id]);
+                                        const isShort = need > 0;
+                                        return (
+                                            <div key={item.id} className={`py-3 flex items-center gap-3 ${isShort ? 'bg-orange-50/30' : ''}`}>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`font-bold text-sm truncate ${isShort ? 'text-orange-700' : 'text-slate-700'}`}>{item.name}</span>
+                                                        <span className="text-[10px] text-slate-400 whitespace-nowrap">標: {dayType === 'weekday' ? item.weekdayMin : item.weekendMin}</span>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="flex items-center gap-2 w-48 justify-end">
+                                                    <div className="relative w-24">
+                                                        <input 
+                                                            type="number" inputMode="decimal" placeholder="現存"
+                                                            value={stockCounts[item.id] || ''}
+                                                            onChange={(e) => setStockCounts({...stockCounts, [item.id]: e.target.value})}
+                                                            className="w-full bg-slate-100 border-none rounded-lg py-1.5 px-2 text-right text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        />
+                                                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-bold">{item.unit}</span>
+                                                    </div>
+                                                    <div className={`w-14 text-center font-black text-sm ${isShort ? 'text-red-500' : 'text-slate-200'}`}>
+                                                        {isShort ? `+${need}` : 'OK'}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        ) : (
+                            <div className="space-y-3 pb-10">
+                                {items.map(item => (
+                                    <div key={item.id} className="p-3 bg-white border border-slate-200 rounded-xl space-y-2 relative shadow-sm">
+                                        <div className="flex gap-2">
+                                            <input 
+                                                value={item.name} onChange={(e) => updateItem(item.id, 'name', e.target.value)}
+                                                placeholder="品項名稱" className="flex-1 font-bold border-b border-slate-100 focus:border-blue-500 outline-none text-sm"
+                                            />
+                                            <input 
+                                                value={item.unit} onChange={(e) => updateItem(item.id, 'unit', e.target.value)}
+                                                placeholder="單位" className="w-12 bg-slate-50 rounded text-center text-xs p-1 outline-none"
+                                            />
+                                            <button onClick={() => deleteItem(item.id)} className="text-slate-300 active:text-red-500 transition-colors"><Icon name="trash-2" size={14}/></button>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <div className="flex-1 flex gap-2">
+                                                <div className="flex-1">
+                                                    <span className="text-[9px] text-blue-500 font-bold block">平日標</span>
+                                                    <input type="number" value={item.weekdayMin} onChange={(e) => updateItem(item.id, 'weekdayMin', parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 rounded p-1 text-xs font-bold outline-none" />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <span className="text-[9px] text-orange-500 font-bold block">假日標</span>
+                                                    <input type="number" value={item.weekendMin} onChange={(e) => updateItem(item.id, 'weekendMin', parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 rounded p-1 text-xs font-bold outline-none" />
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={() => updateItem(item.id, 'shouldRound', !item.shouldRound)}
+                                                className={`px-2 py-1 rounded text-[9px] font-bold transition-all ${item.shouldRound ? 'bg-green-100 text-green-600 ring-1 ring-green-200' : 'bg-slate-100 text-slate-400'}`}
+                                            >
+                                                四捨五入
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                                <button onClick={addItem} className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 font-bold flex items-center justify-center gap-2 text-sm active:bg-slate-50 transition-colors">
+                                    <Icon name="plus" size={16} /> 新增品項
+                                </button>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* 底部統計與複製區 */}
+                    {mode === 'inventory' && (
+                        <footer className="bg-slate-50 border-t border-slate-200 shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
+                            <div className="px-4 py-3">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-bold text-slate-500 flex items-center gap-1.5">
+                                        <Icon name="shopping-cart" size={12} /> 補貨清單預覽 ({orderList.length})
+                                    </span>
+                                    <span className="text-[10px] text-slate-400">系統自動即時更新</span>
+                                </div>
+                                <div className="bg-white border border-slate-200 rounded-lg p-2 max-h-24 overflow-y-auto custom-scrollbar mb-3">
+                                    {orderList.length > 0 ? (
+                                        <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                            {orderList.map((i, idx) => (
+                                                <span key={idx} className="text-xs text-slate-700 font-medium">
+                                                    {i.name} <span className="text-red-500 font-bold">+{i.need}</span><span className="text-[10px] text-slate-400">{i.unit}</span>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-[10px] text-center text-slate-300 py-2">目前無缺貨品項</p>
+                                    )}
+                                </div>
+                                <button 
+                                    onClick={copyOrder} 
+                                    disabled={orderList.length === 0}
+                                    className={`w-full py-3 rounded-xl font-bold text-white shadow-lg transition-all flex items-center justify-center gap-2 active:scale-[0.98] ${showCopySuccess ? 'bg-green-500' : (orderList.length > 0 ? (dayType === 'weekday' ? 'bg-blue-600 shadow-blue-200' : 'bg-orange-600 shadow-orange-200') : 'bg-slate-300 shadow-none')}`}
+                                >
+                                    <Icon name={showCopySuccess ? "check" : "copy"} size={16} />
+                                    {showCopySuccess ? "已成功複製" : "一鍵複製補貨清單"}
+                                </button>
+                            </div>
+                        </footer>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
