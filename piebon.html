@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>雲端智能排班系統 PRO</title>
+    <title>專業雲端排班系統 PRO - 完整功能版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -15,15 +15,13 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
-        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f1f5f9; color: #1e293b; }
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        .glass { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.4); }
-        .auth-modal-enter { animation: modalFadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
-        @keyframes modalFadeIn { from { opacity: 0; transform: scale(0.9) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-        .table-cell-date { min-width: 40px; width: 40px; }
-        .table-cell-name { min-width: 80px; width: 80px; position: sticky; left: 0; z-index: 20; background: white; border-right: 2px solid #e2e8f0; }
-        .row-height { height: 44px; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .schedule-cell { height: 44px; min-width: 50px; position: relative; }
+        .table-sticky-col { position: sticky; left: 0; z-index: 20; background: white; border-right: 2px solid #e2e8f0; }
+        .conflict-alert { border: 2px solid #ef4444; background-color: rgba(239, 68, 68, 0.1); }
     </style>
 </head>
 <body>
@@ -32,7 +30,6 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // --- Firebase Config ---
         const firebaseConfig = {
             apiKey: "AIzaSyDS7PQrDh05bIGu9WYCcFM0s1GvhzDwz4M",
             authDomain: "order-718b1.firebaseapp.com",
@@ -43,240 +40,198 @@
             databaseURL: "https://order-718b1-default-rtdb.asia-southeast1.firebasedatabase.app/"
         };
 
-        // 初始化 Firebase
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
         const PASSCODE = "0418";
 
-        const LucideIcon = ({ name, size = 20, className = "" }) => {
+        const Icon = ({ name, size = 18, className = "" }) => {
             useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name, className]);
             return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
         };
 
         const App = () => {
+            const [view, setView] = useState('user-unavail');
+            const [isAdmin, setIsAdmin] = useState(false);
+            const [showAuth, setShowAuth] = useState(false);
+            const [authInput, setAuthInput] = useState("");
             const [loading, setLoading] = useState(true);
-            const [view, setView] = useState('unavail-view'); 
-            const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
-            const [authModal, setAuthModal] = useState({ show: false, callback: null, value: "" });
             const [currentDate, setCurrentDate] = useState(new Date());
-            
+
             // 雲端同步狀態
-            const [isUnavailLocked, setIsUnavailLocked] = useState(false);
-            const [hideUnavailMarker, setHideUnavailMarker] = useState(false);
-            const [customRedDays, setCustomRedDays] = useState({});
             const [staff, setStaff] = useState([]);
-            const [unavailData, setUnavailData] = useState({});
-            const [scheduleData, setScheduleData] = useState({});
+            const [unavail, setUnavail] = useState({});
+            const [schedules, setSchedules] = useState({});
+            const [isLocked, setIsLocked] = useState(false);
+            const [customRedDays, setCustomRedDays] = useState({});
             
             const [popover, setPopover] = useState(null);
 
-            // --- 雲端資料監聽 ---
             useEffect(() => {
-                const rootRef = db.ref('cloud_scheduler_v3');
-                rootRef.on('value', (snapshot) => {
-                    const data = snapshot.val();
-                    if (data) {
-                        setStaff(data.staff || []);
-                        setUnavailData(data.unavail || {});
-                        setScheduleData(data.schedules || {});
-                        setIsUnavailLocked(!!data.isUnavailLocked);
-                        setCustomRedDays(data.customRedDays || {});
-                    }
+                const ref = db.ref('v3_smart_shift_pro');
+                ref.on('value', (snap) => {
+                    const d = snap.val() || {};
+                    setStaff(d.staff || []);
+                    setUnavail(d.unavail || {});
+                    setSchedules(d.schedules || {});
+                    setIsLocked(!!d.isLocked);
+                    setCustomRedDays(d.customRedDays || {});
                     setLoading(false);
                 });
-                return () => rootRef.off();
+                return () => ref.off();
             }, []);
 
-            // --- 雲端寫入函數 ---
-            const cloudUpdate = (updates) => {
-                db.ref('cloud_scheduler_v3').update(updates);
-            };
-
-            const requireAuth = (callback) => {
-                if (isAdminAuthenticated) { callback(); } 
-                else { setAuthModal({ show: true, callback, value: "" }); }
-            };
-
-            const handleAuthSubmit = () => {
-                if (authModal.value === PASSCODE) {
-                    setIsAdminAuthenticated(true);
-                    setAuthModal({ ...authModal, show: false });
-                    if (authModal.callback) authModal.callback();
-                } else { alert("密碼錯誤"); setAuthModal({ ...authModal, value: "" }); }
-            };
+            const sync = (data) => db.ref('v3_smart_shift_pro').update(data);
 
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth();
             const daysInMonth = new Date(year, month + 1, 0).getDate();
-            const datesArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+            const dates = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
-            const getDayColor = (d) => {
+            const isRed = (d) => {
                 const day = new Date(year, month, d).getDay();
                 const key = `${year}-${month + 1}-${d}`;
-                if (customRedDays[key]) return 'text-red-500';
-                return (day === 0 || day === 6 || day === 5) ? 'text-red-500' : 'text-slate-800';
+                return customRedDays[key] || day === 0 || day === 6;
             };
 
-            const checkConflict = (staffId, day, shiftStr) => {
-                const uKey = `${staffId}-${year}-${month+1}-${day}`;
-                const u = unavailData[uKey];
-                if (!u) return false;
-                if (u.full) return true;
-                const match = shiftStr.match(/(\d+)-(\d+)/);
-                if (!match) return false;
-                const start = parseInt(match[1]), end = parseInt(match[2]);
-                if (u.canUntil && end > parseInt(u.canUntil)) return true;
-                if (u.noAfter && start < parseInt(u.noAfter)) return true;
-                return false;
-            };
-
-            const getShiftBg = (shiftStr) => {
-                const match = shiftStr.match(/(\d+)-/);
-                if (!match) return "transparent";
-                const start = parseInt(match[1]);
-                if (start >= 8 && start < 16) return "rgba(250, 204, 21, 0.7)"; 
-                if (start >= 16 && start < 23) return "rgba(244, 114, 182, 0.7)"; 
-                return "rgba(59, 130, 246, 0.7)"; 
+            const getShiftColor = (time) => {
+                const start = parseInt(time.split('-')[0]);
+                if (start < 16) return "bg-amber-400/80";
+                if (start < 23) return "bg-pink-400/80";
+                return "bg-indigo-400/80";
             };
 
             const stats = useMemo(() => {
                 const res = {};
                 staff.forEach(s => {
-                    let hours = 0, days = 0;
-                    datesArray.forEach(d => {
-                        const shift = scheduleData[`${s.id}-${d}`];
-                        const match = shift?.match(/(\d+)-(\d+)/);
-                        if (match) {
-                            let h = parseInt(match[2]) - parseInt(match[1]);
-                            if (h <= 0) h += 24;
-                            hours += h; days++;
+                    let h = 0, d = 0;
+                    dates.forEach(day => {
+                        const shift = schedules[`${s.id}-${day}`];
+                        if (shift) {
+                            const [sT, eT] = shift.split('-').map(Number);
+                            let diff = eT - sT;
+                            h += diff <= 0 ? diff + 24 : diff;
+                            d++;
                         }
                     });
-                    res[s.id] = { hours, days };
+                    res[s.id] = { h, d };
                 });
                 return res;
-            }, [scheduleData, staff, datesArray]);
+            }, [staff, schedules, dates]);
 
-            const exportAsImage = () => {
-                const target = document.getElementById('export-area');
-                html2canvas(target, { scale: 2 }).then(canvas => {
-                    const link = document.createElement('a');
-                    link.download = `排班表_${year}_${month+1}.png`;
-                    link.href = canvas.toDataURL(); link.click();
-                });
-            };
-
-            if (loading) return (
-                <div className="h-screen flex items-center justify-center bg-slate-50">
-                    <div className="flex flex-col items-center gap-3">
-                        <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                        <span className="font-black text-slate-400">雲端資料同步中...</span>
-                    </div>
-                </div>
-            );
+            if (loading) return <div className="h-screen flex items-center justify-center font-black text-slate-400 animate-pulse">同步雲端中...</div>;
 
             return (
-                <div className="min-h-screen flex flex-col pb-20">
-                    <nav className="glass sticky top-0 z-50 px-4 py-3 flex justify-between items-center shadow-sm">
+                <div className="max-w-full min-h-screen flex flex-col">
+                    {/* Header */}
+                    <header className="bg-white border-b p-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
                         <div className="flex items-center gap-4">
-                            <h1 className="text-xl font-black text-slate-800 tracking-tighter flex items-center gap-1">
-                                <LucideIcon name="cloud" className="text-blue-600"/> 智能雲端排班
+                            <h1 className="text-xl font-black text-slate-800 flex items-center gap-1">
+                                <Icon name="calendar-check" className="text-indigo-600" /> 智慧雲端 PRO
                             </h1>
-                            <div className="hidden md:flex bg-slate-100 p-1 rounded-xl gap-1">
-                                <button onClick={() => setView('unavail-view')} className={`px-4 py-1.5 rounded-lg text-sm font-black transition ${view === 'unavail-view' ? 'bg-white shadow text-blue-600' : 'text-slate-400'}`}>員工畫休</button>
-                                <button onClick={() => requireAuth(() => setView('admin-schedule'))} className={`px-4 py-1.5 rounded-lg text-sm font-black transition ${view === 'admin-schedule' ? 'bg-white shadow text-blue-600' : 'text-slate-400'}`}>管理排班</button>
-                                <button onClick={() => requireAuth(() => setView('staff-manage'))} className={`px-4 py-1.5 rounded-lg text-sm font-black transition ${view === 'staff-manage' ? 'bg-white shadow text-blue-600' : 'text-slate-400'}`}>人員管理</button>
+                            <div className="flex bg-slate-100 p-1 rounded-xl">
+                                <button onClick={() => setView('user-unavail')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition ${view === 'user-unavail' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>畫休</button>
+                                <button onClick={() => isAdmin ? setView('admin-schedule') : setShowAuth(true)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition ${view === 'admin-schedule' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>排班</button>
+                                <button onClick={() => isAdmin ? setView('staff-manage') : setShowAuth(true)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition ${view === 'staff-manage' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>人員</button>
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                            <button onClick={() => setCurrentDate(new Date(year, month - 1))} className="p-2 border rounded-lg hover:bg-slate-50"><LucideIcon name="chevron-left" size={16}/></button>
-                            <span className="px-2 font-black text-sm">{year}/{month + 1}</span>
-                            <button onClick={() => setCurrentDate(new Date(year, month + 1))} className="p-2 border rounded-lg hover:bg-slate-50"><LucideIcon name="chevron-right" size={16}/></button>
-                            {isAdminAuthenticated && <button onClick={()=>setIsAdminAuthenticated(false)} className="ml-2 text-red-500 p-2"><LucideIcon name="log-out" size={18}/></button>}
+                            <button onClick={() => setCurrentDate(new Date(year, month - 1))} className="p-2 border rounded-lg"><Icon name="chevron-left" /></button>
+                            <span className="font-black text-sm">{year}/{month + 1}</span>
+                            <button onClick={() => setCurrentDate(new Date(year, month + 1))} className="p-2 border rounded-lg"><Icon name="chevron-right" /></button>
                         </div>
-                    </nav>
+                    </header>
 
                     <main className="p-4 flex-1">
-                        {view === 'staff-manage' && (
-                            <div className="max-w-4xl mx-auto space-y-4">
-                                <button onClick={() => cloudUpdate({ staff: [...staff, { id: Date.now().toString(), name: '新人員', type: 'part-time', shifts: [], order: staff.length + 1 }] })} className="w-full bg-slate-800 text-white p-4 rounded-2xl font-black flex justify-center items-center gap-2 shadow-lg">
-                                    <LucideIcon name="plus" size={18}/> 新增人員名單
-                                </button>
-                                {staff.sort((a,b) => a.order - b.order).map(s => (
-                                    <div key={s.id} className="bg-white p-3 rounded-2xl border flex items-center gap-4 shadow-sm">
-                                        <input type="number" className="w-10 border rounded-lg p-1 text-center font-black text-blue-600" value={s.order} onChange={(e)=>cloudUpdate({ staff: staff.map(i=>i.id===s.id?{...i, order: parseInt(e.target.value)||0}:i) })}/>
-                                        <input className="font-black border-b border-transparent focus:border-blue-500 outline-none w-24" value={s.name} onChange={(e)=>cloudUpdate({ staff: staff.map(i=>i.id===s.id?{...i, name:e.target.value}:i) })}/>
-                                        <button onClick={()=>cloudUpdate({ staff: staff.filter(i=>i.id!==s.id) })} className="ml-auto text-red-300 hover:text-red-500 p-2"><LucideIcon name="trash-2" size={18}/></button>
+                        {/* 統計區域 (排班模式才顯示) */}
+                        {view === 'admin-schedule' && (
+                            <div className="mb-4 flex gap-3 overflow-x-auto no-scrollbar pb-2">
+                                {staff.map(s => (
+                                    <div key={s.id} className="bg-white border rounded-2xl p-3 min-w-[100px] shadow-sm">
+                                        <div className="text-[10px] font-black text-slate-400">{s.name}</div>
+                                        <div className="flex justify-between items-end">
+                                            <span className="text-lg font-black text-indigo-600">{stats[s.id]?.h}h</span>
+                                            <span className="text-[10px] font-bold text-slate-300">{stats[s.id]?.d}d</span>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         )}
 
-                        {view === 'unavail-view' && (
-                            <div className="space-y-6">
-                                <div className="bg-white p-4 rounded-3xl shadow-sm border flex justify-between items-center">
-                                    <span className="font-black text-slate-700">{isUnavailLocked ? '🔴 畫休功能已鎖定' : '🟢 員工開放畫休中'}</span>
-                                    <button onClick={() => requireAuth(() => cloudUpdate({ isUnavailLocked: !isUnavailLocked }))} className="bg-slate-800 text-white px-5 py-2 rounded-2xl font-black text-sm">
-                                        切換權限
-                                    </button>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                    {staff.sort((a,b)=>a.order-b.order).map(s => (
-                                        <div key={s.id} className="bg-white rounded-[2rem] border overflow-hidden shadow-sm p-4">
-                                            <div className="font-black text-lg mb-3 px-1">{s.name}</div>
-                                            <div className="grid grid-cols-7 gap-1">
-                                                {datesArray.map(d => {
-                                                    const k = `${s.id}-${year}-${month+1}-${d}`;
-                                                    const isOff = unavailData[k]?.full;
-                                                    return (
-                                                        <button key={d} disabled={isUnavailLocked}
-                                                            onClick={() => setPopover({ type: 'unavail', staffId: s.id, day: d })}
-                                                            className={`aspect-square rounded-xl flex items-center justify-center text-[10px] font-black border transition ${isOff ? 'bg-slate-600 text-white' : 'bg-slate-50 text-slate-400'}`}>
-                                                            {d}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
+                        {/* 畫休模式介面 */}
+                        {view === 'user-unavail' && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                {staff.sort((a,b)=>a.order-b.order).map(s => (
+                                    <div key={s.id} className="bg-white rounded-3xl border shadow-sm p-4">
+                                        <div className="font-black text-lg mb-3 flex justify-between items-center">
+                                            {s.name}
+                                            <span className="text-[10px] bg-indigo-50 text-indigo-500 px-2 py-1 rounded-lg uppercase">{s.type === 'full-time' ? '正職' : '兼職'}</span>
                                         </div>
-                                    ))}
-                                </div>
+                                        <div className="calendar-grid">
+                                            {dates.map(d => {
+                                                const k = `${s.id}-${year}-${month+1}-${d}`;
+                                                const u = unavail[k];
+                                                return (
+                                                    <button key={d} disabled={isLocked}
+                                                        onClick={() => setPopover({ type: 'unavail', sid: s.id, d })}
+                                                        className={`aspect-square rounded-xl flex items-center justify-center text-xs font-black border transition 
+                                                        ${u?.full ? 'bg-slate-700 border-slate-700 text-white' : (u?.canUntil || u?.noAfter ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-slate-50 text-slate-400')}
+                                                        ${isRed(d) ? 'ring-1 ring-red-200' : ''}`}>
+                                                        {d}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         )}
 
+                        {/* 排班模式介面 */}
                         {view === 'admin-schedule' && (
-                            <div className="bg-white rounded-3xl border shadow-xl overflow-hidden" id="export-area">
-                                <div className="p-3 border-b flex justify-between items-center bg-slate-50/50">
-                                    <div className="flex gap-2">
-                                        <button onClick={()=>setHideUnavailMarker(!hideUnavailMarker)} className="p-2 bg-white border rounded-xl"><LucideIcon name={hideUnavailMarker ? "eye-off" : "eye"} size={18}/></button>
-                                        <button onClick={exportAsImage} className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-black">導出班表</button>
-                                    </div>
-                                    <div className="flex gap-2 overflow-x-auto no-scrollbar max-w-sm">
-                                        {staff.map(s => <span key={s.id} className="whitespace-nowrap bg-white border rounded px-2 py-1 text-[10px] font-black">{s.name}: {stats[s.id]?.hours}h</span>)}
-                                    </div>
+                            <div className="bg-white rounded-3xl border shadow-xl overflow-hidden">
+                                <div className="p-4 border-b flex justify-between items-center bg-slate-50/50">
+                                    <button onClick={() => sync({ isLocked: !isLocked })} className={`px-4 py-2 rounded-xl font-black text-xs ${isLocked ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'}`}>
+                                        {isLocked ? '畫休已鎖定' : '畫休開放中'}
+                                    </button>
+                                    <button onClick={() => {
+                                        html2canvas(document.getElementById('export-area')).then(canvas => {
+                                            const a = document.createElement('a'); a.download='班表.png'; a.href=canvas.toDataURL(); a.click();
+                                        });
+                                    }} className="bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-black">導出班表圖片</button>
                                 </div>
-                                <div className="overflow-x-auto">
-                                    <table className="min-w-full">
+                                <div className="overflow-x-auto" id="export-area">
+                                    <table className="w-full border-collapse">
                                         <thead>
-                                            <tr className="bg-slate-50">
-                                                <th className="table-cell-name p-2 border-b text-[10px] font-black">人員</th>
-                                                {datesArray.map(d => <th key={d} className={`table-cell-date p-1 border-b border-r text-center ${getDayColor(d)}`}>{d}</th>)}
+                                            <tr className="bg-slate-100">
+                                                <th className="p-3 border-b border-r table-sticky-col text-xs font-black">員工</th>
+                                                {dates.map(d => (
+                                                    <th key={d} onClick={() => {
+                                                        const k = `${year}-${month+1}-${d}`;
+                                                        sync({ customRedDays: {...customRedDays, [k]: !customRedDays[k]} });
+                                                    }} className={`p-2 border-b border-r text-center cursor-pointer ${isRed(d) ? 'text-red-500 bg-red-50' : 'text-slate-400'}`}>
+                                                        <div className="text-xs font-black">{d}</div>
+                                                    </th>
+                                                ))}
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {staff.sort((a,b)=>a.order-b.order).map(s => (
                                                 <tr key={s.id} className="row-height">
-                                                    <td className="table-cell-name p-0 text-center border-b font-black text-xs">{s.name}</td>
-                                                    {datesArray.map(d => {
-                                                        const sKey = `${s.id}-${d}`, uKey = `${s.id}-${year}-${month+1}-${d}`;
-                                                        const shift = scheduleData[sKey], u = unavailData[uKey];
-                                                        const hasConflict = shift && checkConflict(s.id, d, shift);
+                                                    <td className="p-2 border-b border-r text-center font-black text-xs table-sticky-col">{s.name}</td>
+                                                    {dates.map(d => {
+                                                        const sk = `${s.id}-${d}`, uk = `${s.id}-${year}-${month+1}-${d}`;
+                                                        const shift = schedules[sk], u = unavail[uk];
+                                                        // 衝突邏輯
+                                                        const isConflict = shift && (u?.full || (u?.canUntil && parseInt(shift.split('-')[1]) > u.canUntil) || (u?.noAfter && parseInt(shift.split('-')[0]) < u.noAfter));
+                                                        
                                                         return (
-                                                            <td key={d} onClick={()=>setPopover({type:'schedule', staffId: s.id, day: d})} className="table-cell-date border-r border-b relative row-height cursor-pointer">
-                                                                {u && !hideUnavailMarker && <div className="absolute inset-0 z-0 bg-slate-800/20 flex items-center justify-center font-black text-[10px]">{u.full?'休':u.canUntil?'~'+u.canUntil:u.noAfter?u.noAfter+'~':''}</div>}
+                                                            <td key={d} onClick={() => setPopover({ type: 'schedule', sid: s.id, d })}
+                                                                className={`border-r border-b schedule-cell cursor-pointer hover:bg-slate-50 transition`}>
+                                                                {u && <div className="absolute inset-0 bg-slate-200/50 flex items-center justify-center font-black text-[10px] text-slate-400">{u.full?'休':u.canUntil?'~'+u.canUntil:u.noAfter?u.noAfter+'~':''}</div>}
                                                                 {shift && (
-                                                                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center" style={{ backgroundColor: getShiftBg(shift) }}>
-                                                                        {shift.split('-').map((t,i)=><span key={i} className="text-[11px] font-black leading-none">{t}</span>)}
-                                                                        {hasConflict && <div className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] px-1 rounded animate-pulse">!</div>}
+                                                                    <div className={`absolute inset-0 flex flex-col items-center justify-center z-10 ${getShiftColor(shift)} ${isConflict ? 'conflict-alert' : ''}`}>
+                                                                        {shift.split('-').map((t,i) => <span key={i} className="text-[11px] font-black leading-none">{t}</span>)}
+                                                                        {isConflict && <div className="absolute top-0 right-0 bg-red-600 text-white text-[8px] px-1 animate-bounce">!</div>}
                                                                     </div>
                                                                 )}
                                                             </td>
@@ -291,54 +246,24 @@
                         )}
                     </main>
 
-                    {/* Popover 控制器 */}
+                    {/* 彈窗：畫休或排班設定 */}
                     {popover && (
-                        <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={()=>setPopover(null)}>
-                            <div className="bg-white rounded-[2rem] w-full max-w-[320px] shadow-2xl p-6 auth-modal-enter" onClick={e=>e.stopPropagation()}>
-                                <h3 className="font-black mb-4">{popover.day}日 {popover.type==='unavail'?'畫休':'排班'}</h3>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {popover.type === 'schedule' ? (
-                                        <>
-                                            {['08-16', '10-18', '12-20', '16-23', '17-23', '23-05'].map(t => (
-                                                <button key={t} onClick={()=>{cloudUpdate({ schedules: {...scheduleData, [`${popover.staffId}-${popover.day}`]: t} }); setPopover(null)}} className="p-3 bg-slate-100 rounded-xl font-black text-xs">{t}</button>
-                                            ))}
-                                            <button onClick={()=>{const n={...scheduleData}; delete n[`${popover.staffId}-${popover.day}`]; cloudUpdate({schedules:n}); setPopover(null)}} className="col-span-2 p-3 text-red-500 font-black">清除班表</button>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <button onClick={()=>{
-                                                const k = `${popover.staffId}-${year}-${month+1}-${popover.day}`;
-                                                cloudUpdate({ unavail: {...unavailData, [k]: {full: !unavailData[k]?.full}} });
-                                            }} className="col-span-2 p-4 bg-slate-800 text-white rounded-xl font-black">全天休假</button>
-                                            <input type="number" placeholder="幾點前可到" className="p-3 border rounded-xl" onBlur={(e)=>cloudUpdate({unavail: {...unavailData, [`${popover.staffId}-${year}-${month+1}-${popover.day}`]: {canUntil: e.target.value}}})}/>
-                                            <input type="number" placeholder="幾點後可到" className="p-3 border rounded-xl" onBlur={(e)=>cloudUpdate({unavail: {...unavailData, [`${popover.staffId}-${year}-${month+1}-${popover.day}`]: {noAfter: e.target.value}}})}/>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Auth Modal */}
-                    {authModal.show && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6">
-                            <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl auth-modal-enter text-center">
-                                <LucideIcon name="shield-check" size={48} className="text-blue-600 mx-auto mb-4"/>
-                                <h3 className="text-xl font-black mb-6 text-slate-800">管理授權</h3>
-                                <input type="password" autoFocus className="w-full bg-slate-100 rounded-2xl p-4 text-center text-3xl font-black mb-6 outline-none border-2 focus:border-blue-500" placeholder="••••" value={authModal.value} onChange={(e)=>setAuthModal({...authModal, value: e.target.value})} onKeyDown={(e)=>e.key==='Enter' && handleAuthSubmit()} />
-                                <div className="flex gap-4">
-                                    <button onClick={()=>setAuthModal({show:false, callback:null, value:""})} className="flex-1 font-black text-slate-400">取消</button>
-                                    <button onClick={handleAuthSubmit} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black">登入</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+                        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setPopover(null)}>
+                            <div className="bg-white rounded-[2rem] w-full max-w-[320px] p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                                <h3 className="font-black text-lg mb-4 text-center">{popover.d}日 {popover.type === 'unavail' ? '畫休設定' : '排班設定'}</h3>
+                                {popover.type === 'unavail' ? (
+                                    <div className="space-y-4">
+                                        <button onClick={() => {
+                                            const k = `${popover.sid}-${year}-${month+1}-${popover.d}`;
+                                            sync({ unavail: {...unavail, [k]: { full: !unavail[k]?.full }} });
+                                            setPopover(null);
+                                        }} className="w-full py-4 bg-slate-800 text-white rounded-2xl font-black">全天休假</button>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input type="number" placeholder="幾點前可到" className="p-3 border rounded-xl text-sm" onBlur={(e) => sync({ unavail: {...unavail, [`${popover.sid}-${year}-${month+1}-${popover.d}`]: { canUntil: e.target.value }} })} />
+                                            <input type="number" placeholder="幾點後可到" className="p-3 border rounded-xl text-sm" onBlur={(e) => sync({ unavail: {...unavail, [`${popover.sid}-${year}-${month+1}-${popover.d}`]: { noAfter: e.target.value }} })} />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {['08-16', '10-18', '12-20', '16-23', '17-23', '23-05'].map(t => (
+                                            <button key={t} onClick={() =>
