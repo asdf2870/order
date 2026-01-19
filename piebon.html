@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>專業智能排班系統 PRO (Firebase 雲端版)</title>
+    <title>專業智能排班系統 PRO (Cloud)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -25,7 +25,7 @@
         /* 表格格線與寬度 */
         .table-cell-date { min-width: 40px; width: 40px; }
         .table-cell-name { min-width: 80px; width: 80px; position: sticky; left: 0; z-index: 20; background: white; border-right: 2px solid #e2e8f0; }
-        .row-height { height: 40px; } 
+        .row-height { height: 40px; }
     </style>
 </head>
 <body>
@@ -34,7 +34,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // --- Firebase Config (你的原始設定) ---
+        // --- Firebase Config (你的專屬設定) ---
         const firebaseConfig = {
             apiKey: "AIzaSyDS7PQrDh05bIGu9WYCcFM0s1GvhzDwz4M",
             authDomain: "order-718b1.firebaseapp.com",
@@ -45,8 +45,10 @@
             databaseURL: "https://order-718b1-default-rtdb.asia-southeast1.firebasedatabase.app/"
         };
 
+        // 初始化 Firebase
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
+        const DB_KEY = 'pro_scheduler_cloud_v1';
         const PASSCODE = "0418";
 
         const LucideIcon = ({ name, size = 20, className = "" }) => {
@@ -55,45 +57,41 @@
         };
 
         const App = () => {
-            // --- 核心狀態 ---
+            const [loading, setLoading] = useState(true);
             const [view, setView] = useState('unavail-view'); 
             const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
             const [authModal, setAuthModal] = useState({ show: false, callback: null, value: "" });
-            const [loading, setLoading] = useState(true);
             
             const [currentDate, setCurrentDate] = useState(new Date());
             const [isUnavailLocked, setIsUnavailLocked] = useState(false); 
             const [hideUnavailMarker, setHideUnavailMarker] = useState(false); 
-            const [customRedDays, setCustomRedDays] = useState({});
+            const [customRedDays, setCustomRedDays] = useState({}); 
 
             const [staff, setStaff] = useState([]);
             const [unavailData, setUnavailData] = useState({});
             const [scheduleData, setScheduleData] = useState({});
             const [popover, setPopover] = useState(null);
 
-            // --- 雲端資料同步 ---
+            // --- 雲端監聽 ---
             useEffect(() => {
-                const rootRef = db.ref('cloud_scheduler_v3');
-                rootRef.on('value', (snapshot) => {
-                    const data = snapshot.val();
-                    if (data) {
-                        setStaff(data.staff || [{ id: '1', name: '店長', type: 'full-time', shifts: ['morning', 'evening'], note: '', order: 1 }]);
-                        setUnavailData(data.unavail || {});
-                        setScheduleData(data.schedules || {});
-                        setIsUnavailLocked(!!data.isUnavailLocked);
-                        setCustomRedDays(data.customRedDays || {});
-                    }
+                const ref = db.ref(DB_KEY);
+                ref.on('value', (snapshot) => {
+                    const data = snapshot.val() || {};
+                    setStaff(data.staff || [{ id: '1', name: '店長', type: 'full-time', shifts: ['morning', 'evening'], note: '', order: 1 }]);
+                    setUnavailData(data.unavailData || {});
+                    setScheduleData(data.scheduleData || {});
+                    setIsUnavailLocked(!!data.isUnavailLocked);
+                    setCustomRedDays(data.customRedDays || {});
                     setLoading(false);
                 });
-                return () => rootRef.off();
+                return () => ref.off();
             }, []);
 
-            // 持久化到 Firebase 的輔助函式
-            const syncToCloud = (updates) => {
-                db.ref('cloud_scheduler_v3').update(updates);
+            // --- 雲端同步函式 ---
+            const sync = (updates) => {
+                db.ref(DB_KEY).update(updates);
             };
 
-            // --- 密碼保護 ---
             const requireAuth = (callback) => {
                 if (isAdminAuthenticated) { callback(); } 
                 else { setAuthModal({ show: true, callback, value: "" }); }
@@ -109,7 +107,6 @@
                 }
             };
 
-            // --- 日期計算 ---
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth();
             const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -122,18 +119,15 @@
                 return (day === 0 || day === 6 || day === 5) ? 'text-red-500' : 'text-slate-800';
             };
 
-            // --- 衝突偵測 (Smart Conflict) ---
             const checkConflict = (staffId, day, shiftStr) => {
                 const uKey = `${staffId}-${year}-${month+1}-${day}`;
                 const u = unavailData[uKey];
                 if (!u) return false;
                 if (u.full) return true;
-
                 const match = shiftStr.match(/(\d+)-(\d+)/);
                 if (!match) return false;
                 const start = parseInt(match[1]);
                 const end = parseInt(match[2]);
-
                 if (u.canUntil && end > parseInt(u.canUntil)) return true;
                 if (u.noAfter && start < parseInt(u.noAfter)) return true;
                 return false;
@@ -148,7 +142,6 @@
                 return "rgba(59, 130, 246, 0.7)"; 
             };
 
-            // --- 統計 ---
             const stats = useMemo(() => {
                 const result = {};
                 staff.forEach(s => {
@@ -179,11 +172,10 @@
                 });
             };
 
-            if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50 font-black text-slate-400">連線雲端中...</div>;
+            if (loading) return <div className="h-screen flex items-center justify-center font-black text-slate-400 animate-pulse">連線雲端資料庫...</div>;
 
             return (
                 <div className="min-h-screen flex flex-col pb-20">
-                    {/* 頂部導航 */}
                     <nav className="glass sticky top-0 z-50 px-4 py-3 flex justify-between items-center shadow-sm">
                         <div className="flex items-center gap-4">
                             <h1 className="text-xl font-black text-slate-800 tracking-tighter flex items-center gap-1">
@@ -196,7 +188,6 @@
                                 <button onClick={() => requireAuth(() => setView('staff-manage'))} className={`px-4 py-1.5 rounded-lg text-sm font-black transition ${view === 'staff-manage' ? 'bg-white shadow text-blue-600' : 'text-slate-400 hover:bg-white/50'}`}>人員管理</button>
                             </div>
                         </div>
-
                         <div className="flex items-center gap-3">
                             <div className="flex items-center bg-white border rounded-xl overflow-hidden shadow-sm">
                                 <button onClick={() => setCurrentDate(new Date(year, month - 1))} className="p-2 hover:bg-slate-50"><LucideIcon name="chevron-left" size={16}/></button>
@@ -207,43 +198,41 @@
                     </nav>
 
                     <main className="p-4 flex-1">
-                        {/* 1. 人員管理 */}
                         {view === 'staff-manage' && (
                             <div className="max-w-4xl mx-auto space-y-4">
                                 <div className="flex justify-between items-center">
                                     <h2 className="text-2xl font-black">人員管理</h2>
-                                    <button onClick={() => syncToCloud({ staff: [...staff, { id: Date.now().toString(), name: '新人員', type: 'part-time', shifts: [], note: '', order: staff.length + 1 }] })} className="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2">
+                                    <button onClick={() => sync({ staff: [...staff, { id: Date.now().toString(), name: '新人員', type: 'part-time', shifts: [], note: '', order: staff.length + 1 }] })} className="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2">
                                         <LucideIcon name="plus" size={18}/> 新增人員
                                     </button>
                                 </div>
                                 <div className="space-y-2">
                                     {staff.sort((a,b) => a.order - b.order).map(s => (
                                         <div key={s.id} className="bg-white p-3 rounded-2xl border flex items-center gap-4 shadow-sm hover:border-blue-200 transition">
-                                            <input type="number" className="w-10 border rounded-lg p-1 text-center font-black text-blue-600" value={s.order} onChange={(e)=>syncToCloud({ staff: staff.map(i=>i.id===s.id?{...i, order: parseInt(e.target.value)||0}:i) })}/>
-                                            <input className="font-black border-b border-transparent focus:border-blue-500 outline-none w-28" value={s.name} onChange={(e)=>syncToCloud({ staff: staff.map(i=>i.id===s.id?{...i, name:e.target.value}:i) })}/>
+                                            <input type="number" className="w-10 border rounded-lg p-1 text-center font-black text-blue-600" value={s.order} onChange={(e)=>sync({ staff: staff.map(i=>i.id===s.id?{...i, order: parseInt(e.target.value)||0}:i) })}/>
+                                            <input className="font-black border-b border-transparent focus:border-blue-500 outline-none w-28" value={s.name} onChange={(e)=>sync({ staff: staff.map(i=>i.id===s.id?{...i, name:e.target.value}:i) })}/>
                                             <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
-                                                <button onClick={()=>syncToCloud({ staff: staff.map(i=>i.id===s.id?{...i, type:'full-time'}:i) })} className={`px-2 py-1 rounded-md text-[10px] font-black transition ${s.type==='full-time'?'bg-white shadow text-blue-600':'text-slate-400'}`}>正職</button>
-                                                <button onClick={()=>syncToCloud({ staff: staff.map(i=>i.id===s.id?{...i, type:'part-time'}:i) })} className={`px-2 py-1 rounded-md text-[10px] font-black transition ${s.type==='part-time'?'bg-white shadow text-blue-600':'text-slate-400'}`}>兼職</button>
+                                                <button onClick={()=>sync({ staff: staff.map(i=>i.id===s.id?{...i, type:'full-time'}:i) })} className={`px-2 py-1 rounded-md text-[10px] font-black transition ${s.type==='full-time'?'bg-white shadow text-blue-600':'text-slate-400'}`}>正職</button>
+                                                <button onClick={()=>sync({ staff: staff.map(i=>i.id===s.id?{...i, type:'part-time'}:i) })} className={`px-2 py-1 rounded-md text-[10px] font-black transition ${s.type==='part-time'?'bg-white shadow text-blue-600':'text-slate-400'}`}>兼職</button>
                                             </div>
                                             <div className="flex gap-1">
                                                 {['morning','evening','night'].map(sh => (
                                                     <button key={sh} onClick={()=>{
                                                         const newSh = s.shifts.includes(sh)?s.shifts.filter(x=>x!==sh):[...s.shifts, sh];
-                                                        syncToCloud({ staff: staff.map(i=>i.id===s.id?{...i, shifts:newSh}:i) });
+                                                        sync({ staff: staff.map(i=>i.id===s.id?{...i, shifts:newSh}:i) });
                                                     }} className={`w-8 h-8 rounded-lg text-xs font-black border transition ${s.shifts.includes(sh)?'bg-blue-600 border-blue-600 text-white':'bg-white text-slate-300'}`}>
                                                         {sh==='morning'?'早':sh==='evening'?'晚':'夜'}
                                                     </button>
                                                 ))}
                                             </div>
-                                            <input placeholder="備註..." className="flex-1 bg-slate-50 px-3 py-2 rounded-lg text-xs font-bold" value={s.note} onChange={(e)=>syncToCloud({ staff: staff.map(i=>i.id===s.id?{...i, note:e.target.value}:i) })}/>
-                                            <button onClick={()=>syncToCloud({ staff: staff.filter(i=>i.id!==s.id) })} className="text-red-300 hover:text-red-500 p-2"><LucideIcon name="trash-2" size={18}/></button>
+                                            <input placeholder="備註..." className="flex-1 bg-slate-50 px-3 py-2 rounded-lg text-xs font-bold" value={s.note} onChange={(e)=>sync({ staff: staff.map(i=>i.id===s.id?{...i, note:e.target.value}:i) })}/>
+                                            <button onClick={()=>sync({ staff: staff.filter(i=>i.id!==s.id) })} className="text-red-300 hover:text-red-500 p-2"><LucideIcon name="trash-2" size={18}/></button>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         )}
 
-                        {/* 2. 員工畫休模式 */}
                         {view === 'unavail-view' && (
                             <div className="space-y-6">
                                 <div className="bg-white p-4 rounded-3xl shadow-sm border flex justify-between items-center">
@@ -251,11 +240,10 @@
                                         <div className={`w-3 h-3 rounded-full ${isUnavailLocked ? 'bg-red-500' : 'bg-emerald-500 animate-pulse'}`}></div>
                                         <span className="font-black text-slate-700">{isUnavailLocked ? '畫休鎖定中' : '開放畫休'}</span>
                                     </div>
-                                    <button onClick={() => requireAuth(() => syncToCloud({ isUnavailLocked: !isUnavailLocked }))} className={`px-5 py-2 rounded-2xl font-black text-sm flex items-center gap-2 transition ${isUnavailLocked ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-800 text-white'}`}>
+                                    <button onClick={() => requireAuth(() => sync({ isUnavailLocked: !isUnavailLocked }))} className={`px-5 py-2 rounded-2xl font-black text-sm flex items-center gap-2 transition ${isUnavailLocked ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-800 text-white'}`}>
                                         <LucideIcon name={isUnavailLocked ? "unlock" : "lock"} size={16}/> {isUnavailLocked ? '解除鎖定' : '一鍵鎖定'}
                                     </button>
                                 </div>
-
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                     {staff.sort((a,b)=>a.order-b.order).map(s => (
                                         <div key={s.id} className="bg-white rounded-[2rem] border overflow-hidden shadow-sm">
@@ -303,7 +291,6 @@
                             </div>
                         )}
 
-                        {/* 3. 管理排班模式 */}
                         {view === 'admin-schedule' && (
                             <div className="bg-white rounded-3xl border shadow-xl overflow-hidden flex flex-col" id="export-area">
                                 <div className="p-3 border-b flex flex-wrap gap-4 justify-between items-center bg-slate-50/50">
@@ -325,7 +312,6 @@
                                         ))}
                                     </div>
                                 </div>
-
                                 <div className="overflow-x-auto">
                                     <table className="min-w-full border-collapse">
                                         <thead>
@@ -334,7 +320,7 @@
                                                 {datesArray.map(d => (
                                                     <th key={d} onClick={() => {
                                                         const k = `${year}-${month+1}-${d}`;
-                                                        syncToCloud({ customRedDays: {...customRedDays, [k]: !customRedDays[k]} });
+                                                        sync({ customRedDays: {...customRedDays, [k]: !customRedDays[k]} });
                                                     }} className={`table-cell-date p-1 border-b border-r cursor-pointer transition ${getDayColor(d)}`}>
                                                         <div className="text-[13px] font-black leading-none">{d}</div>
                                                         <div className="text-[9px] font-bold opacity-60 uppercase">{['日','一','二','三','四','五','六'][new Date(year, month, d).getDay()]}</div>
@@ -355,7 +341,6 @@
                                                         const u = unavailData[uKey];
                                                         const hasConflict = shift && checkConflict(s.id, d, shift);
                                                         const timeParts = shift ? shift.split('-') : [];
-
                                                         return (
                                                             <td key={d} onClick={()=>setPopover({type:'schedule', staffId: s.id, day: d})} 
                                                                 className={`table-cell-date p-0 border-r border-b relative row-height cursor-pointer hover:bg-blue-50 transition`}
@@ -393,7 +378,6 @@
                         )}
                     </main>
 
-                    {/* AuthModal (原本的) */}
                     {authModal.show && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6">
                             <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl flex flex-col items-center auth-modal-enter">
@@ -418,7 +402,6 @@
                         </div>
                     )}
 
-                    {/* Popover (原本的) */}
                     {popover && (
                         <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={()=>setPopover(null)}>
                             <div className="bg-white rounded-[2rem] w-full max-w-[340px] shadow-2xl overflow-hidden auth-modal-enter" onClick={e=>e.stopPropagation()}>
@@ -426,24 +409,22 @@
                                     <span className="font-black text-slate-800">{popover.day}日 {popover.type==='unavail'?'填寫畫休':'管理排班'}</span>
                                     <button onClick={()=>setPopover(null)} className="p-1 hover:bg-slate-200 rounded-lg"><LucideIcon name="x" size={18}/></button>
                                 </div>
-                                
                                 <div className="p-5 space-y-4">
                                     {popover.type === 'unavail' ? (
                                         <div className="space-y-4">
                                             <button onClick={()=>{
                                                 const k = `${popover.staffId}-${year}-${month+1}-${popover.day}`;
                                                 const cur = unavailData[k] || {};
-                                                syncToCloud({ unavail: {...unavailData, [k]: {...cur, full: !cur.full}} });
+                                                sync({ unavailData: {...unavailData, [k]: {...cur, full: !cur.full}} });
                                             }} className={`w-full py-3 rounded-2xl font-black border-2 transition-all ${unavailData[`${popover.staffId}-${year}-${month+1}-${popover.day}`]?.full ? 'bg-slate-800 border-slate-800 text-white' : 'bg-slate-50 border-transparent text-slate-400'}`}>全天休假</button>
-                                            
                                             <div className="grid grid-cols-2 gap-3">
                                                 <div className="bg-slate-50 p-2 rounded-2xl border">
                                                     <span className="text-[10px] font-black text-slate-400 block mb-0.5">可到幾點</span>
-                                                    <input type="number" placeholder="數字" className="w-full bg-transparent font-black outline-none" onBlur={(e)=>syncToCloud({unavail: {...unavailData, [`${popover.staffId}-${year}-${month+1}-${popover.day}`]: {...(unavailData[`${popover.staffId}-${year}-${month+1}-${popover.day}`]||{}), canUntil: e.target.value}}})} />
+                                                    <input type="number" placeholder="數字" className="w-full bg-transparent font-black outline-none" onBlur={(e)=>sync({unavailData: {...unavailData, [`${popover.staffId}-${year}-${month+1}-${popover.day}`]: {...(unavailData[`${popover.staffId}-${year}-${month+1}-${popover.day}`]||{}), canUntil: e.target.value}}})} />
                                                 </div>
                                                 <div className="bg-slate-50 p-2 rounded-2xl border">
                                                     <span className="text-[10px] font-black text-slate-400 block mb-0.5">幾點後可以</span>
-                                                    <input type="number" placeholder="數字" className="w-full bg-transparent font-black outline-none" onBlur={(e)=>syncToCloud({unavail: {...unavailData, [`${popover.sid}-${year}-${month+1}-${popover.day}`]: {...(unavailData[`${popover.sid}-${year}-${month+1}-${popover.day}`]||{}), noAfter: e.target.value}}})} />
+                                                    <input type="number" placeholder="數字" className="w-full bg-transparent font-black outline-none" onBlur={(e)=>sync({unavailData: {...unavailData, [`${popover.staffId}-${year}-${month+1}-${popover.day}`]: {...(unavailData[`${popover.staffId}-${year}-${month+1}-${popover.day}`]||{}), noAfter: e.target.value}}})} />
                                                 </div>
                                             </div>
                                         </div>
@@ -451,14 +432,14 @@
                                         <div className="grid grid-cols-2 gap-2">
                                             {['08-16', '10-18', '12-20', '16-23', '17-23', '23-05'].map(t => (
                                                 <button key={t} onClick={()=>{
-                                                    syncToCloud({ schedules: {...scheduleData, [`${popover.staffId}-${popover.day}`]: t} });
+                                                    sync({ scheduleData: {...scheduleData, [`${popover.staffId}-${popover.day}`]: t} });
                                                     setPopover(null);
                                                 }} className="p-3 bg-slate-100 rounded-xl font-black text-xs hover:bg-blue-600 hover:text-white transition">{t}</button>
                                             ))}
                                             <button onClick={()=>{
                                                 const newSchedules = {...scheduleData};
                                                 delete newSchedules[`${popover.staffId}-${popover.day}`];
-                                                syncToCloud({ schedules: newSchedules });
+                                                sync({ scheduleData: newSchedules });
                                                 setPopover(null);
                                             }} className="col-span-2 p-3 text-red-500 font-black text-xs">清除班表</button>
                                         </div>
