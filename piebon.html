@@ -1,179 +1,478 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>智能排班系統 PRO（Firebase 版）</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>專業智能排班系統 PRO (Firebase 雲端版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
-  <!-- Tailwind -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- React -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <!-- Icons & Utils -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-
-  <!-- Firebase CDN (compat) -->
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics-compat.js"></script>
-
-  <style>
-    body { font-family: 'Noto Sans TC', sans-serif; background:#f1f5f9 }
-    .table-cell-date { width: 40px; min-width: 40px; }
-    .table-cell-name { width: 80px; min-width: 80px; position: sticky; left: 0; background: white; z-index: 10 }
-    .row-height { height: 40px; }
-  </style>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f1f5f9; color: #1e293b; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .glass { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.4); }
+        .auth-modal-enter { animation: modalFadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        @keyframes modalFadeIn { from { opacity: 0; transform: scale(0.9) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        
+        /* 表格格線與寬度 */
+        .table-cell-date { min-width: 40px; width: 40px; }
+        .table-cell-name { min-width: 80px; width: 80px; position: sticky; left: 0; z-index: 20; background: white; border-right: 2px solid #e2e8f0; }
+        .row-height { height: 40px; } 
+    </style>
 </head>
 <body>
-  <div id="root"></div>
+    <div id="root"></div>
 
-<script type="text/babel">
-/*************************
- * Firebase Init
- *************************/
-const firebaseConfig = {
-  apiKey: "AIzaSyDS7PQrDh05bIGu9WYCcFM0s1GvhzDwz4M",
-  authDomain: "order-718b1.firebaseapp.com",
-  projectId: "order-718b1",
-  storageBucket: "order-718b1.firebasestorage.app",
-  messagingSenderId: "454465000018",
-  appId: "1:454465000018:web:ac7c787ba3e423a2a1458b",
-  measurementId: "G-3MC1RTW85K",
-  databaseURL: "https://order-718b1-default-rtdb.asia-southeast1.firebasedatabase.app"
-};
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
 
-firebase.initializeApp(firebaseConfig);
-firebase.analytics();
+        // --- Firebase Config (你的原始設定) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyDS7PQrDh05bIGu9WYCcFM0s1GvhzDwz4M",
+            authDomain: "order-718b1.firebaseapp.com",
+            projectId: "order-718b1",
+            storageBucket: "order-718b1.firebasestorage.app",
+            messagingSenderId: "454465000018",
+            appId: "1:454465000018:web:ac7c787ba3e423a2a1458b",
+            databaseURL: "https://order-718b1-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        };
 
-const db = firebase.database();
-const auth = firebase.auth();
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const PASSCODE = "0418";
 
-const staffRef = db.ref('pro/staff');
-const unavailRef = db.ref('pro/unavail');
-const scheduleRef = db.ref('pro/schedules');
+        const LucideIcon = ({ name, size = 20, className = "" }) => {
+            useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
+            return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
+        };
 
-/*************************
- * React App
- *************************/
-const { useState, useEffect } = React;
+        const App = () => {
+            // --- 核心狀態 ---
+            const [view, setView] = useState('unavail-view'); 
+            const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+            const [authModal, setAuthModal] = useState({ show: false, callback: null, value: "" });
+            const [loading, setLoading] = useState(true);
+            
+            const [currentDate, setCurrentDate] = useState(new Date());
+            const [isUnavailLocked, setIsUnavailLocked] = useState(false); 
+            const [hideUnavailMarker, setHideUnavailMarker] = useState(false); 
+            const [customRedDays, setCustomRedDays] = useState({});
 
-const App = () => {
-  const [user, setUser] = useState(null);
-  const [role, setRole] = useState(null);
-  const [myStaffId, setMyStaffId] = useState(null);
+            const [staff, setStaff] = useState([]);
+            const [unavailData, setUnavailData] = useState({});
+            const [scheduleData, setScheduleData] = useState({});
+            const [popover, setPopover] = useState(null);
 
-  const [view, setView] = useState('unavail');
-  const [staff, setStaff] = useState([]);
-  const [unavail, setUnavail] = useState({});
-  const [schedule, setSchedule] = useState({});
+            // --- 雲端資料同步 ---
+            useEffect(() => {
+                const rootRef = db.ref('cloud_scheduler_v3');
+                rootRef.on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        setStaff(data.staff || [{ id: '1', name: '店長', type: 'full-time', shifts: ['morning', 'evening'], note: '', order: 1 }]);
+                        setUnavailData(data.unavail || {});
+                        setScheduleData(data.schedules || {});
+                        setIsUnavailLocked(!!data.isUnavailLocked);
+                        setCustomRedDays(data.customRedDays || {});
+                    }
+                    setLoading(false);
+                });
+                return () => rootRef.off();
+            }, []);
 
-  const [loginOpen, setLoginOpen] = useState(false);
-  const [loginForm, setLoginForm] = useState({ email:'', password:'' });
+            // 持久化到 Firebase 的輔助函式
+            const syncToCloud = (updates) => {
+                db.ref('cloud_scheduler_v3').update(updates);
+            };
 
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const days = new Date(year, month+1, 0).getDate();
+            // --- 密碼保護 ---
+            const requireAuth = (callback) => {
+                if (isAdminAuthenticated) { callback(); } 
+                else { setAuthModal({ show: true, callback, value: "" }); }
+            };
 
-  /******** Auth ********/
-  useEffect(() => {
-    return auth.onAuthStateChanged(async u => {
-      if (!u) {
-        setUser(null); setRole(null); setMyStaffId(null);
-        return;
-      }
-      setUser(u);
-      const snap = await db.ref(`users/${u.uid}`).once('value');
-      if (snap.exists()) {
-        const d = snap.val();
-        setRole(d.role);
-        setMyStaffId(d.staffId || null);
-      }
-    });
-  }, []);
+            const handleAuthSubmit = () => {
+                if (authModal.value === PASSCODE) {
+                    setIsAdminAuthenticated(true);
+                    setAuthModal({ ...authModal, show: false });
+                    if (authModal.callback) authModal.callback();
+                } else {
+                    setAuthModal({ ...authModal, value: "" });
+                }
+            };
 
-  /******** Data sync ********/
-  useEffect(() => {
-    staffRef.on('value', s => s.exists() && setStaff(s.val()));
-    unavailRef.on('value', s => s.exists() && setUnavail(s.val()));
-    scheduleRef.on('value', s => s.exists() && setSchedule(s.val()));
-    return () => { staffRef.off(); unavailRef.off(); scheduleRef.off(); };
-  }, []);
+            // --- 日期計算 ---
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const datesArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
-  /******** UI Guards ********/
-  useEffect(() => {
-    if (role === 'staff') setView('unavail');
-  }, [role]);
+            const getDayColor = (d) => {
+                const day = new Date(year, month, d).getDay();
+                const key = `${year}-${month + 1}-${d}`;
+                if (customRedDays[key]) return 'text-red-500';
+                return (day === 0 || day === 6 || day === 5) ? 'text-red-500' : 'text-slate-800';
+            };
 
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <button onClick={()=>setLoginOpen(true)} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black">登入系統</button>
-        {loginOpen && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
-            <div className="bg-white p-8 rounded-2xl w-80">
-              <h3 className="font-black text-xl mb-4 text-center">登入</h3>
-              <input className="w-full mb-3 p-2 bg-slate-100 rounded" placeholder="Email" value={loginForm.email} onChange={e=>setLoginForm({...loginForm,email:e.target.value})} />
-              <input type="password" className="w-full mb-4 p-2 bg-slate-100 rounded" placeholder="密碼" value={loginForm.password} onChange={e=>setLoginForm({...loginForm,password:e.target.value})} />
-              <button className="w-full bg-blue-600 text-white py-2 rounded font-black" onClick={()=>auth.signInWithEmailAndPassword(loginForm.email, loginForm.password)}>登入</button>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
+            // --- 衝突偵測 (Smart Conflict) ---
+            const checkConflict = (staffId, day, shiftStr) => {
+                const uKey = `${staffId}-${year}-${month+1}-${day}`;
+                const u = unavailData[uKey];
+                if (!u) return false;
+                if (u.full) return true;
 
-  return (
-    <div className="p-4">
-      <div className="flex justify-between mb-4">
-        <div className="font-black">登入身分：{role}</div>
-        <button onClick={()=>auth.signOut()} className="text-red-500 font-black">登出</button>
-      </div>
+                const match = shiftStr.match(/(\d+)-(\d+)/);
+                if (!match) return false;
+                const start = parseInt(match[1]);
+                const end = parseInt(match[2]);
 
-      <div className="mb-4 flex gap-2">
-        <button onClick={()=>setView('unavail')} className="px-4 py-2 bg-slate-800 text-white rounded">畫休</button>
-        {role === 'admin' && (
-          <button onClick={()=>setView('schedule')} className="px-4 py-2 bg-blue-600 text-white rounded">排班</button>
-        )}
-      </div>
+                if (u.canUntil && end > parseInt(u.canUntil)) return true;
+                if (u.noAfter && start < parseInt(u.noAfter)) return true;
+                return false;
+            };
 
-      {view === 'unavail' && (
-        <div className="space-y-4">
-          {staff.filter(s => role==='admin' || s.id===myStaffId).map(s => (
-            <div key={s.id} className="bg-white p-4 rounded-xl shadow">
-              <div className="font-black mb-2">{s.name}</div>
-              <div className="grid grid-cols-7 gap-1">
-                {Array.from({length:days},(_,i)=>i+1).map(d => {
-                  const key = `${s.id}-${year}-${month+1}-${d}`;
-                  return (
-                    <button key={d} onClick={()=>{
-                      if (role==='staff' && s.id!==myStaffId) return;
-                      unavailRef.child(key).set({ full:true });
-                    }} className="border rounded h-10 text-sm">
-                      {d}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            const getShiftBg = (shiftStr) => {
+                const match = shiftStr.match(/(\d+)-/);
+                if (!match) return "transparent";
+                const start = parseInt(match[1]);
+                if (start >= 8 && start < 16) return "rgba(250, 204, 21, 0.7)"; 
+                if (start >= 16 && start < 23) return "rgba(244, 114, 182, 0.7)"; 
+                return "rgba(59, 130, 246, 0.7)"; 
+            };
 
-      {view === 'schedule' && role==='admin' && (
-        <div className="bg-white p-4 rounded-xl shadow">管理者排班頁（可自行擴充）</div>
-      )}
-    </div>
-  );
-};
+            // --- 統計 ---
+            const stats = useMemo(() => {
+                const result = {};
+                staff.forEach(s => {
+                    let hours = 0; let days = 0;
+                    datesArray.forEach(d => {
+                        const shift = scheduleData[`${s.id}-${d}`];
+                        if (shift) {
+                            const match = shift.match(/(\d+)-(\d+)/);
+                            if (match) {
+                                let h = parseInt(match[2]) - parseInt(match[1]);
+                                if (h <= 0) h += 24;
+                                hours += h; days++;
+                            }
+                        }
+                    });
+                    result[s.id] = { hours, days };
+                });
+                return result;
+            }, [scheduleData, staff, datesArray]);
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-</script>
+            const exportAsImage = () => {
+                const target = document.getElementById('export-area');
+                html2canvas(target, { scale: 2 }).then(canvas => {
+                    const link = document.createElement('a');
+                    link.download = `排班表_${year}_${month+1}.png`;
+                    link.href = canvas.toDataURL();
+                    link.click();
+                });
+            };
+
+            if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50 font-black text-slate-400">連線雲端中...</div>;
+
+            return (
+                <div className="min-h-screen flex flex-col pb-20">
+                    {/* 頂部導航 */}
+                    <nav className="glass sticky top-0 z-50 px-4 py-3 flex justify-between items-center shadow-sm">
+                        <div className="flex items-center gap-4">
+                            <h1 className="text-xl font-black text-slate-800 tracking-tighter flex items-center gap-1">
+                                <LucideIcon name="clock-4" className="text-blue-600"/>
+                                智能排班系統 <span className="text-xs bg-blue-600 text-white px-1.5 rounded ml-1">PRO</span>
+                            </h1>
+                            <div className="hidden md:flex bg-slate-100 p-1 rounded-xl gap-1">
+                                <button onClick={() => setView('unavail-view')} className={`px-4 py-1.5 rounded-lg text-sm font-black transition ${view === 'unavail-view' ? 'bg-white shadow text-blue-600' : 'text-slate-400 hover:bg-white/50'}`}>員工畫休</button>
+                                <button onClick={() => requireAuth(() => setView('admin-schedule'))} className={`px-4 py-1.5 rounded-lg text-sm font-black transition ${view === 'admin-schedule' ? 'bg-white shadow text-blue-600' : 'text-slate-400 hover:bg-white/50'}`}>管理排班</button>
+                                <button onClick={() => requireAuth(() => setView('staff-manage'))} className={`px-4 py-1.5 rounded-lg text-sm font-black transition ${view === 'staff-manage' ? 'bg-white shadow text-blue-600' : 'text-slate-400 hover:bg-white/50'}`}>人員管理</button>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center bg-white border rounded-xl overflow-hidden shadow-sm">
+                                <button onClick={() => setCurrentDate(new Date(year, month - 1))} className="p-2 hover:bg-slate-50"><LucideIcon name="chevron-left" size={16}/></button>
+                                <span className="px-3 font-black text-sm tabular-nums">{year}/{month + 1}</span>
+                                <button onClick={() => setCurrentDate(new Date(year, month + 1))} className="p-2 hover:bg-slate-50"><LucideIcon name="chevron-right" size={16}/></button>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <main className="p-4 flex-1">
+                        {/* 1. 人員管理 */}
+                        {view === 'staff-manage' && (
+                            <div className="max-w-4xl mx-auto space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <h2 className="text-2xl font-black">人員管理</h2>
+                                    <button onClick={() => syncToCloud({ staff: [...staff, { id: Date.now().toString(), name: '新人員', type: 'part-time', shifts: [], note: '', order: staff.length + 1 }] })} className="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2">
+                                        <LucideIcon name="plus" size={18}/> 新增人員
+                                    </button>
+                                </div>
+                                <div className="space-y-2">
+                                    {staff.sort((a,b) => a.order - b.order).map(s => (
+                                        <div key={s.id} className="bg-white p-3 rounded-2xl border flex items-center gap-4 shadow-sm hover:border-blue-200 transition">
+                                            <input type="number" className="w-10 border rounded-lg p-1 text-center font-black text-blue-600" value={s.order} onChange={(e)=>syncToCloud({ staff: staff.map(i=>i.id===s.id?{...i, order: parseInt(e.target.value)||0}:i) })}/>
+                                            <input className="font-black border-b border-transparent focus:border-blue-500 outline-none w-28" value={s.name} onChange={(e)=>syncToCloud({ staff: staff.map(i=>i.id===s.id?{...i, name:e.target.value}:i) })}/>
+                                            <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
+                                                <button onClick={()=>syncToCloud({ staff: staff.map(i=>i.id===s.id?{...i, type:'full-time'}:i) })} className={`px-2 py-1 rounded-md text-[10px] font-black transition ${s.type==='full-time'?'bg-white shadow text-blue-600':'text-slate-400'}`}>正職</button>
+                                                <button onClick={()=>syncToCloud({ staff: staff.map(i=>i.id===s.id?{...i, type:'part-time'}:i) })} className={`px-2 py-1 rounded-md text-[10px] font-black transition ${s.type==='part-time'?'bg-white shadow text-blue-600':'text-slate-400'}`}>兼職</button>
+                                            </div>
+                                            <div className="flex gap-1">
+                                                {['morning','evening','night'].map(sh => (
+                                                    <button key={sh} onClick={()=>{
+                                                        const newSh = s.shifts.includes(sh)?s.shifts.filter(x=>x!==sh):[...s.shifts, sh];
+                                                        syncToCloud({ staff: staff.map(i=>i.id===s.id?{...i, shifts:newSh}:i) });
+                                                    }} className={`w-8 h-8 rounded-lg text-xs font-black border transition ${s.shifts.includes(sh)?'bg-blue-600 border-blue-600 text-white':'bg-white text-slate-300'}`}>
+                                                        {sh==='morning'?'早':sh==='evening'?'晚':'夜'}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <input placeholder="備註..." className="flex-1 bg-slate-50 px-3 py-2 rounded-lg text-xs font-bold" value={s.note} onChange={(e)=>syncToCloud({ staff: staff.map(i=>i.id===s.id?{...i, note:e.target.value}:i) })}/>
+                                            <button onClick={()=>syncToCloud({ staff: staff.filter(i=>i.id!==s.id) })} className="text-red-300 hover:text-red-500 p-2"><LucideIcon name="trash-2" size={18}/></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 2. 員工畫休模式 */}
+                        {view === 'unavail-view' && (
+                            <div className="space-y-6">
+                                <div className="bg-white p-4 rounded-3xl shadow-sm border flex justify-between items-center">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-3 h-3 rounded-full ${isUnavailLocked ? 'bg-red-500' : 'bg-emerald-500 animate-pulse'}`}></div>
+                                        <span className="font-black text-slate-700">{isUnavailLocked ? '畫休鎖定中' : '開放畫休'}</span>
+                                    </div>
+                                    <button onClick={() => requireAuth(() => syncToCloud({ isUnavailLocked: !isUnavailLocked }))} className={`px-5 py-2 rounded-2xl font-black text-sm flex items-center gap-2 transition ${isUnavailLocked ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-800 text-white'}`}>
+                                        <LucideIcon name={isUnavailLocked ? "unlock" : "lock"} size={16}/> {isUnavailLocked ? '解除鎖定' : '一鍵鎖定'}
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                    {staff.sort((a,b)=>a.order-b.order).map(s => (
+                                        <div key={s.id} className="bg-white rounded-[2rem] border overflow-hidden shadow-sm">
+                                            <div className="bg-slate-50 px-5 py-3 border-b flex justify-between items-center">
+                                                <div>
+                                                    <div className="text-lg font-black text-slate-800 leading-tight">{s.name}</div>
+                                                    <div className="text-[10px] font-bold text-blue-500 uppercase">{s.type === 'full-time' ? '正職' : '兼職'} • {s.shifts.map(sh => sh==='morning'?'早':sh==='evening'?'晚':'夜').join('/')}</div>
+                                                </div>
+                                            </div>
+                                            <div className="p-3">
+                                                <div className="grid grid-cols-7 gap-1 mb-1">
+                                                    {['一','二','三','四','五','六','日'].map(w => <div key={w} className={`text-center text-[10px] font-black ${w==='五'||w==='六'||w==='日' ? 'text-red-500':'text-slate-400'}`}>{w}</div>)}
+                                                </div>
+                                                <div className="grid grid-cols-7 gap-1">
+                                                    {Array.from({ length: (new Date(year, month, 1).getDay() || 7) - 1 }).map((_, i) => <div key={i} />)}
+                                                    {datesArray.map(d => {
+                                                        const k = `${s.id}-${year}-${month+1}-${d}`;
+                                                        const data = unavailData[k];
+                                                        const colorClass = getDayColor(d);
+                                                        return (
+                                                            <button 
+                                                                key={d} disabled={isUnavailLocked}
+                                                                onClick={() => setPopover({ type: 'unavail', staffId: s.id, day: d })}
+                                                                className={`aspect-square rounded-xl flex flex-col items-center justify-center relative border transition-all 
+                                                                    ${isUnavailLocked ? 'opacity-50' : 'hover:border-blue-400'}
+                                                                    ${data?.full ? 'bg-slate-600/30' : (data?.canUntil || data?.noAfter ? 'bg-emerald-500/30' : 'bg-white')}
+                                                                `}
+                                                            >
+                                                                <span className={`absolute top-0.5 left-1 text-[9px] font-black ${colorClass}`}>{d}</span>
+                                                                {data?.full && <span className="text-[12px] font-black text-slate-800">休</span>}
+                                                                {(data?.canUntil || data?.noAfter) && (
+                                                                    <div className="text-[11px] font-black text-slate-800 leading-none">
+                                                                        {data.canUntil && <div>~{data.canUntil}</div>}
+                                                                        {data.noAfter && <div>{data.noAfter}~</div>}
+                                                                    </div>
+                                                                )}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 3. 管理排班模式 */}
+                        {view === 'admin-schedule' && (
+                            <div className="bg-white rounded-3xl border shadow-xl overflow-hidden flex flex-col" id="export-area">
+                                <div className="p-3 border-b flex flex-wrap gap-4 justify-between items-center bg-slate-50/50">
+                                    <div className="flex items-center gap-3">
+                                        <button onClick={()=>setHideUnavailMarker(!hideUnavailMarker)} className={`p-2 rounded-xl border transition ${hideUnavailMarker ? 'bg-slate-800 text-white' : 'bg-white text-slate-400'}`}>
+                                            <LucideIcon name={hideUnavailMarker ? "eye-off" : "eye"} size={18}/>
+                                        </button>
+                                        <button onClick={exportAsImage} className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-black flex items-center gap-2">
+                                            <LucideIcon name="download" size={16}/> 導出圖檔
+                                        </button>
+                                    </div>
+                                    <div className="flex gap-2 overflow-x-auto no-scrollbar max-w-lg">
+                                        {staff.map(s => (
+                                            <div key={s.id} className="bg-white border rounded-lg px-3 py-1.5 flex-shrink-0 flex items-center gap-2 shadow-sm">
+                                                <span className="text-[10px] font-black text-slate-400">{s.name}</span>
+                                                <span className="text-xs font-black text-blue-600">{stats[s.id]?.hours}h</span>
+                                                <span className="text-[10px] font-bold text-slate-300">{stats[s.id]?.days}d</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-50">
+                                                <th className="table-cell-name p-2 border-b text-[10px] font-black text-slate-400 text-center">人員</th>
+                                                {datesArray.map(d => (
+                                                    <th key={d} onClick={() => {
+                                                        const k = `${year}-${month+1}-${d}`;
+                                                        syncToCloud({ customRedDays: {...customRedDays, [k]: !customRedDays[k]} });
+                                                    }} className={`table-cell-date p-1 border-b border-r cursor-pointer transition ${getDayColor(d)}`}>
+                                                        <div className="text-[13px] font-black leading-none">{d}</div>
+                                                        <div className="text-[9px] font-bold opacity-60 uppercase">{['日','一','二','三','四','五','六'][new Date(year, month, d).getDay()]}</div>
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {staff.sort((a,b)=>a.order-b.order).map(s => (
+                                                <tr key={s.id} className="row-height group">
+                                                    <td className="table-cell-name p-0 text-center border-b">
+                                                        <span className="font-black text-slate-700 text-[13px]">{s.name}</span>
+                                                    </td>
+                                                    {datesArray.map(d => {
+                                                        const sKey = `${s.id}-${d}`;
+                                                        const uKey = `${s.id}-${year}-${month+1}-${d}`;
+                                                        const shift = scheduleData[sKey];
+                                                        const u = unavailData[uKey];
+                                                        const hasConflict = shift && checkConflict(s.id, d, shift);
+                                                        const timeParts = shift ? shift.split('-') : [];
+
+                                                        return (
+                                                            <td key={d} onClick={()=>setPopover({type:'schedule', staffId: s.id, day: d})} 
+                                                                className={`table-cell-date p-0 border-r border-b relative row-height cursor-pointer hover:bg-blue-50 transition`}
+                                                            >
+                                                                {u && !hideUnavailMarker && (
+                                                                    <div className="absolute inset-0 z-0 flex flex-col items-center justify-center opacity-80" style={{ background: u.full ? 'rgba(71, 85, 105, 0.3)' : (u.canUntil || u.noAfter ? 'rgba(34, 197, 94, 0.3)' : 'transparent')}}>
+                                                                        {u.full && <span className="text-lg font-black text-slate-900">休</span>}
+                                                                        <div className="text-[10px] font-black text-slate-900 leading-tight">
+                                                                            {u.canUntil && <div>~{u.canUntil}</div>}
+                                                                            {u.noAfter && <div>{u.noAfter}~</div>}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                                {shift && (
+                                                                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center" style={{ backgroundColor: getShiftBg(shift) }}>
+                                                                        {timeParts.map((tp, idx) => (
+                                                                            <span key={idx} className="text-[12px] font-black leading-[1.1] text-slate-900">{tp}</span>
+                                                                        ))}
+                                                                        {hasConflict && (
+                                                                            <div className="absolute inset-0 border-2 border-red-500 animate-pulse flex items-center justify-center bg-red-500/10">
+                                                                                <span className="text-[8px] font-black text-red-600 bg-white px-0.5 rounded">!</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* AuthModal (原本的) */}
+                    {authModal.show && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6">
+                            <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl flex flex-col items-center auth-modal-enter">
+                                <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 mb-6">
+                                    <LucideIcon name="lock" size={32}/>
+                                </div>
+                                <h3 className="text-xl font-black mb-1 text-slate-800">安全驗證</h3>
+                                <p className="text-slate-400 text-xs mb-8 font-bold tracking-widest uppercase">請輸入管理者密碼</p>
+                                <input 
+                                    type="password" autoFocus
+                                    className="w-full bg-slate-100 border-4 border-transparent focus:border-blue-500 rounded-2xl p-4 text-center text-3xl font-black tracking-[0.5em] outline-none mb-6 transition-all"
+                                    placeholder="••••"
+                                    value={authModal.value}
+                                    onChange={(e)=>setAuthModal({...authModal, value: e.target.value})}
+                                    onKeyDown={(e)=>e.key==='Enter' && handleAuthSubmit()}
+                                />
+                                <div className="flex gap-4 w-full">
+                                    <button onClick={()=>setAuthModal({show:false, callback:null, value:""})} className="flex-1 py-4 font-black text-slate-400 hover:text-slate-600">取消</button>
+                                    <button onClick={handleAuthSubmit} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black shadow-xl shadow-blue-200">登入</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Popover (原本的) */}
+                    {popover && (
+                        <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={()=>setPopover(null)}>
+                            <div className="bg-white rounded-[2rem] w-full max-w-[340px] shadow-2xl overflow-hidden auth-modal-enter" onClick={e=>e.stopPropagation()}>
+                                <div className="bg-slate-50 px-6 py-4 border-b flex justify-between items-center">
+                                    <span className="font-black text-slate-800">{popover.day}日 {popover.type==='unavail'?'填寫畫休':'管理排班'}</span>
+                                    <button onClick={()=>setPopover(null)} className="p-1 hover:bg-slate-200 rounded-lg"><LucideIcon name="x" size={18}/></button>
+                                </div>
+                                
+                                <div className="p-5 space-y-4">
+                                    {popover.type === 'unavail' ? (
+                                        <div className="space-y-4">
+                                            <button onClick={()=>{
+                                                const k = `${popover.staffId}-${year}-${month+1}-${popover.day}`;
+                                                const cur = unavailData[k] || {};
+                                                syncToCloud({ unavail: {...unavailData, [k]: {...cur, full: !cur.full}} });
+                                            }} className={`w-full py-3 rounded-2xl font-black border-2 transition-all ${unavailData[`${popover.staffId}-${year}-${month+1}-${popover.day}`]?.full ? 'bg-slate-800 border-slate-800 text-white' : 'bg-slate-50 border-transparent text-slate-400'}`}>全天休假</button>
+                                            
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="bg-slate-50 p-2 rounded-2xl border">
+                                                    <span className="text-[10px] font-black text-slate-400 block mb-0.5">可到幾點</span>
+                                                    <input type="number" placeholder="數字" className="w-full bg-transparent font-black outline-none" onBlur={(e)=>syncToCloud({unavail: {...unavailData, [`${popover.staffId}-${year}-${month+1}-${popover.day}`]: {...(unavailData[`${popover.staffId}-${year}-${month+1}-${popover.day}`]||{}), canUntil: e.target.value}}})} />
+                                                </div>
+                                                <div className="bg-slate-50 p-2 rounded-2xl border">
+                                                    <span className="text-[10px] font-black text-slate-400 block mb-0.5">幾點後可以</span>
+                                                    <input type="number" placeholder="數字" className="w-full bg-transparent font-black outline-none" onBlur={(e)=>syncToCloud({unavail: {...unavailData, [`${popover.sid}-${year}-${month+1}-${popover.day}`]: {...(unavailData[`${popover.sid}-${year}-${month+1}-${popover.day}`]||{}), noAfter: e.target.value}}})} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {['08-16', '10-18', '12-20', '16-23', '17-23', '23-05'].map(t => (
+                                                <button key={t} onClick={()=>{
+                                                    syncToCloud({ schedules: {...scheduleData, [`${popover.staffId}-${popover.day}`]: t} });
+                                                    setPopover(null);
+                                                }} className="p-3 bg-slate-100 rounded-xl font-black text-xs hover:bg-blue-600 hover:text-white transition">{t}</button>
+                                            ))}
+                                            <button onClick={()=>{
+                                                const newSchedules = {...scheduleData};
+                                                delete newSchedules[`${popover.staffId}-${popover.day}`];
+                                                syncToCloud({ schedules: newSchedules });
+                                                setPopover(null);
+                                            }} className="col-span-2 p-3 text-red-500 font-black text-xs">清除班表</button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
