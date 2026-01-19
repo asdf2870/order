@@ -1,6 +1,179 @@
-{
-  "rules": {
-    ".read": true,
-    ".write": true
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>智能排班系統 PRO（Firebase 版）</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Icons & Utils -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <!-- Firebase CDN (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics-compat.js"></script>
+
+  <style>
+    body { font-family: 'Noto Sans TC', sans-serif; background:#f1f5f9 }
+    .table-cell-date { width: 40px; min-width: 40px; }
+    .table-cell-name { width: 80px; min-width: 80px; position: sticky; left: 0; background: white; z-index: 10 }
+    .row-height { height: 40px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+<script type="text/babel">
+/*************************
+ * Firebase Init
+ *************************/
+const firebaseConfig = {
+  apiKey: "AIzaSyDS7PQrDh05bIGu9WYCcFM0s1GvhzDwz4M",
+  authDomain: "order-718b1.firebaseapp.com",
+  projectId: "order-718b1",
+  storageBucket: "order-718b1.firebasestorage.app",
+  messagingSenderId: "454465000018",
+  appId: "1:454465000018:web:ac7c787ba3e423a2a1458b",
+  measurementId: "G-3MC1RTW85K",
+  databaseURL: "https://order-718b1-default-rtdb.asia-southeast1.firebasedatabase.app"
+};
+
+firebase.initializeApp(firebaseConfig);
+firebase.analytics();
+
+const db = firebase.database();
+const auth = firebase.auth();
+
+const staffRef = db.ref('pro/staff');
+const unavailRef = db.ref('pro/unavail');
+const scheduleRef = db.ref('pro/schedules');
+
+/*************************
+ * React App
+ *************************/
+const { useState, useEffect } = React;
+
+const App = () => {
+  const [user, setUser] = useState(null);
+  const [role, setRole] = useState(null);
+  const [myStaffId, setMyStaffId] = useState(null);
+
+  const [view, setView] = useState('unavail');
+  const [staff, setStaff] = useState([]);
+  const [unavail, setUnavail] = useState({});
+  const [schedule, setSchedule] = useState({});
+
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [loginForm, setLoginForm] = useState({ email:'', password:'' });
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const days = new Date(year, month+1, 0).getDate();
+
+  /******** Auth ********/
+  useEffect(() => {
+    return auth.onAuthStateChanged(async u => {
+      if (!u) {
+        setUser(null); setRole(null); setMyStaffId(null);
+        return;
+      }
+      setUser(u);
+      const snap = await db.ref(`users/${u.uid}`).once('value');
+      if (snap.exists()) {
+        const d = snap.val();
+        setRole(d.role);
+        setMyStaffId(d.staffId || null);
+      }
+    });
+  }, []);
+
+  /******** Data sync ********/
+  useEffect(() => {
+    staffRef.on('value', s => s.exists() && setStaff(s.val()));
+    unavailRef.on('value', s => s.exists() && setUnavail(s.val()));
+    scheduleRef.on('value', s => s.exists() && setSchedule(s.val()));
+    return () => { staffRef.off(); unavailRef.off(); scheduleRef.off(); };
+  }, []);
+
+  /******** UI Guards ********/
+  useEffect(() => {
+    if (role === 'staff') setView('unavail');
+  }, [role]);
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <button onClick={()=>setLoginOpen(true)} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black">登入系統</button>
+        {loginOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
+            <div className="bg-white p-8 rounded-2xl w-80">
+              <h3 className="font-black text-xl mb-4 text-center">登入</h3>
+              <input className="w-full mb-3 p-2 bg-slate-100 rounded" placeholder="Email" value={loginForm.email} onChange={e=>setLoginForm({...loginForm,email:e.target.value})} />
+              <input type="password" className="w-full mb-4 p-2 bg-slate-100 rounded" placeholder="密碼" value={loginForm.password} onChange={e=>setLoginForm({...loginForm,password:e.target.value})} />
+              <button className="w-full bg-blue-600 text-white py-2 rounded font-black" onClick={()=>auth.signInWithEmailAndPassword(loginForm.email, loginForm.password)}>登入</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   }
-}
+
+  return (
+    <div className="p-4">
+      <div className="flex justify-between mb-4">
+        <div className="font-black">登入身分：{role}</div>
+        <button onClick={()=>auth.signOut()} className="text-red-500 font-black">登出</button>
+      </div>
+
+      <div className="mb-4 flex gap-2">
+        <button onClick={()=>setView('unavail')} className="px-4 py-2 bg-slate-800 text-white rounded">畫休</button>
+        {role === 'admin' && (
+          <button onClick={()=>setView('schedule')} className="px-4 py-2 bg-blue-600 text-white rounded">排班</button>
+        )}
+      </div>
+
+      {view === 'unavail' && (
+        <div className="space-y-4">
+          {staff.filter(s => role==='admin' || s.id===myStaffId).map(s => (
+            <div key={s.id} className="bg-white p-4 rounded-xl shadow">
+              <div className="font-black mb-2">{s.name}</div>
+              <div className="grid grid-cols-7 gap-1">
+                {Array.from({length:days},(_,i)=>i+1).map(d => {
+                  const key = `${s.id}-${year}-${month+1}-${d}`;
+                  return (
+                    <button key={d} onClick={()=>{
+                      if (role==='staff' && s.id!==myStaffId) return;
+                      unavailRef.child(key).set({ full:true });
+                    }} className="border rounded h-10 text-sm">
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {view === 'schedule' && role==='admin' && (
+        <div className="bg-white p-4 rounded-xl shadow">管理者排班頁（可自行擴充）</div>
+      )}
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
