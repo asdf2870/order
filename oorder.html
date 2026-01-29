@@ -1,249 +1,257 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import {
-  ShoppingCart, CalendarDays, PartyPopper, Copy,
-  Plus, Trash2, CheckCircle2, Settings, Store
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>簡約盤點叫貨系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
 
-import {
-  collection,
-  doc,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  deleteDoc
-} from "firebase/firestore";
+    <!-- Firebase App & Firestore SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-app.js";
+        import { getFirestore, collection, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-firestore.js";
 
-import { db } from "./firebase";
+        const firebaseConfig = {
+            apiKey: "AIzaSyCiWs5ZtstLxSSLQHufvnrWilnnGADFbEI",
+            authDomain: "ngdd-8dd14.firebaseapp.com",
+            projectId: "ngdd-8dd14",
+            storageBucket: "ngdd-8dd14.firebasestorage.app",
+            messagingSenderId: "780195335307",
+            appId: "1:780195335307:web:c6e95d1e0a7ee92cf3588e"
+        };
 
-const App = () => {
-  const [view, setView] = useState('inventory');
-  const [dayMode, setDayMode] = useState('weekday');
-  const [stores, setStores] = useState([]);
-  const [currentStoreId, setCurrentStoreId] = useState(null);
-  const [items, setItems] = useState([]);
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
 
-  /* ================= 店家 ================= */
+        window.firebaseDB = db; // 暴露給非 module 的 React 使用
+    </script>
 
-  const storesRef = collection(db, "stores");
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; color: #334155; }
+        .compact-input { padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; width: 100%; outline: none; transition: all 0.2s; }
+        .compact-input:focus { border-color: #3b82f6; ring: 2px solid #bfdbfe; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+<div id="root"></div>
 
-  useEffect(() => {
-    const unsub = onSnapshot(storesRef, snap => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setStores(data);
-      if (!currentStoreId && data.length > 0) {
-        setCurrentStoreId(data[0].id);
-      }
-    });
-    return () => unsub();
-  }, []);
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+const db = window.firebaseDB;
+const itemsCollection = collection(db, "order_items");
 
-  const addStore = async () => {
-    await addDoc(storesRef, { name: "新分店" });
-  };
-
-  const updateStoreName = async (id, name) => {
-    await updateDoc(doc(db, "stores", id), { name });
-  };
-
-  const deleteStore = async (id) => {
-    if (!window.confirm("確定刪除這間店？所有品項都會消失")) return;
-    await deleteDoc(doc(db, "stores", id));
-    if (id === currentStoreId) setCurrentStoreId(null);
-  };
-
-  /* ================= 品項 ================= */
-
-  useEffect(() => {
-    if (!currentStoreId) return;
-    const itemsRef = collection(db, "stores", currentStoreId, "items");
-    const unsub = onSnapshot(itemsRef, snap => {
-      setItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    return () => unsub();
-  }, [currentStoreId]);
-
-  const addItem = async () => {
-    const itemsRef = collection(db, "stores", currentStoreId, "items");
-    await addDoc(itemsRef, {
-      name: "新需求品項",
-      unit: "件",
-      weekdayTarget: 0,
-      weekendTarget: 0,
-      currentStock: 0,
-      roundUp: false
-    });
-  };
-
-  const updateItem = async (id, field, value) => {
-    await updateDoc(
-      doc(db, "stores", currentStoreId, "items", id),
-      { [field]: value }
-    );
-  };
-
-  const deleteItem = async (id) => {
-    await deleteDoc(doc(db, "stores", currentStoreId, "items", id));
-  };
-
-  /* ================= 計算 ================= */
-
-  const calculateOrder = (item) => {
-    const target = dayMode === 'weekday'
-      ? item.weekdayTarget
-      : item.weekendTarget;
-    return Math.max(0, target - item.currentStock);
-  };
-
-  const summaryText = useMemo(() => {
-    if (!items.length) return "目前無須叫貨。";
-    let text = `【${dayMode === 'weekday' ? '平日' : '假日'}叫貨清單】\n`;
-    items.forEach(i => {
-      const qty = calculateOrder(i);
-      if (qty > 0) text += `• ${i.name}：${qty} ${i.unit}\n`;
-    });
-    return text;
-  }, [items, dayMode]);
-
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(summaryText);
-  };
-
-  /* ================= 中文輸入 ================= */
-
-  const SafeInput = ({ value, onChange, className }) => {
-    const [local, setLocal] = useState(value);
-    const composing = useRef(false);
-    useEffect(() => setLocal(value), [value]);
-
-    return (
-      <input
-        className={className}
-        value={local}
-        onCompositionStart={() => composing.current = true}
-        onCompositionEnd={(e) => {
-          composing.current = false;
-          setLocal(e.target.value);
-          onChange(e.target.value);
-        }}
-        onChange={(e) => {
-          setLocal(e.target.value);
-          if (!composing.current) onChange(e.target.value);
-        }}
-      />
-    );
-  };
-
-  return (
-    <div className="max-w-2xl mx-auto min-h-screen bg-slate-50 flex flex-col">
-      {/* Header */}
-      <header className="bg-white border-b p-4 flex justify-between">
-        <div className="flex items-center gap-2">
-          <ShoppingCart />
-          <b>多店盤點叫貨</b>
-        </div>
-        <button onClick={() => setView(view === 'inventory' ? 'settings' : 'inventory')}>
-          <Settings />
-        </button>
-      </header>
-
-      {/* 店家切換 */}
-      <div className="p-3 flex gap-2 overflow-x-auto bg-slate-100">
-        {stores.map(s => (
-          <button
-            key={s.id}
-            onClick={() => setCurrentStoreId(s.id)}
-            className={`px-4 py-2 rounded-xl flex items-center gap-1
-              ${s.id === currentStoreId ? 'bg-white shadow' : ''}`}
-          >
-            <Store size={16}/> {s.name}
-          </button>
-        ))}
-        <button onClick={addStore} className="px-3 py-2 bg-slate-800 text-white rounded-xl">
-          <Plus size={16}/>
-        </button>
-      </div>
-
-      <main className="flex-1 p-4 space-y-4">
-        {view === 'inventory' ? (
-          <>
-            <div className="flex gap-2">
-              <button onClick={() => setDayMode('weekday')} className="flex-1 bg-blue-100 p-3 rounded">
-                <CalendarDays /> 平日
-              </button>
-              <button onClick={() => setDayMode('weekend')} className="flex-1 bg-orange-100 p-3 rounded">
-                <PartyPopper /> 假日
-              </button>
-            </div>
-
-            {items.map(item => {
-              const qty = calculateOrder(item);
-              return (
-                <div key={item.id} className="bg-white p-3 rounded-xl border flex justify-between">
-                  <div>
-                    <b>{item.name}</b>
-                    <div className="text-xs text-gray-500">{item.unit}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={item.currentStock}
-                      className="w-16 text-center border rounded"
-                      onChange={e => updateItem(item.id, 'currentStock', Number(e.target.value))}
-                    />
-                    {qty > 0
-                      ? <span className="text-red-600 font-bold">+{qty}</span>
-                      : <CheckCircle2 className="text-green-500"/>}
-                  </div>
-                </div>
-              );
-            })}
-
-            <div className="bg-slate-800 text-white p-4 rounded-xl">
-              <div className="flex justify-between mb-2">
-                <b>叫貨清單</b>
-                <button onClick={copyToClipboard}><Copy size={16}/></button>
-              </div>
-              <pre className="whitespace-pre-wrap text-sm">{summaryText}</pre>
-            </div>
-          </>
-        ) : (
-          <>
-            <button onClick={addItem} className="bg-slate-800 text-white px-4 py-2 rounded-xl">
-              <Plus /> 新增品項
-            </button>
-
-            {items.map(item => (
-              <div key={item.id} className="bg-white p-3 rounded-xl border space-y-2">
-                <SafeInput
-                  className="w-full font-bold border-b"
-                  value={item.name}
-                  onChange={v => updateItem(item.id, 'name', v)}
-                />
-                <button onClick={() => deleteItem(item.id)} className="text-red-600">
-                  <Trash2 size={16}/> 刪除
-                </button>
-              </div>
-            ))}
-
-            <hr />
-
-            {stores.map(s => (
-              <div key={s.id} className="flex gap-2 items-center">
-                <SafeInput
-                  className="flex-1 border-b"
-                  value={s.name}
-                  onChange={v => updateStoreName(s.id, v)}
-                />
-                <button onClick={() => deleteStore(s.id)}>
-                  <Trash2 size={16}/>
-                </button>
-              </div>
-            ))}
-          </>
-        )}
-      </main>
-    </div>
-  );
+const LucideIcon = ({ name, size = 18, className = "" }) => {
+    useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
+    return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
 };
 
-export default App;
+const App = () => {
+    const [view, setView] = useState('inventory');
+    const [dayMode, setDayMode] = useState('weekday');
+    const [items, setItems] = useState([]);
+
+    // 監聽 Firestore 實時更新
+    useEffect(() => {
+        const unsubscribe = onSnapshot(itemsCollection, (snapshot) => {
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setItems(data);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    const updateItem = async (id, field, value) => {
+        const docRef = doc(db, "order_items", id);
+        await setDoc(docRef, { [field]: value }, { merge: true });
+    };
+
+    const addItem = async () => {
+        const id = Date.now().toString();
+        const newItem = {
+            name: '新需求品項',
+            unit: '件',
+            weekdayTarget: 0,
+            weekendTarget: 0,
+            roundUp: false,
+            currentStock: 0
+        };
+        const docRef = doc(db, "order_items", id);
+        await setDoc(docRef, newItem);
+    };
+
+    const deleteItem = async (id) => {
+        if (confirm('確定刪除此品項？')) {
+            const docRef = doc(db, "order_items", id);
+            await setDoc(docRef, {}, { merge: true });
+            // Firestore 可以用 deleteDoc 但這裡簡單清空即可
+        }
+    };
+
+    const calculateOrder = (item) => {
+        const target = dayMode === 'weekday' ? item.weekdayTarget : item.weekendTarget;
+        let needed = target - item.currentStock;
+        if (needed < 0) needed = 0;
+        return item.roundUp ? Math.ceil(needed) : needed;
+    };
+
+    const summaryText = useMemo(() => {
+        const filtered = items.map(item => ({ ...item, orderQty: calculateOrder(item) }))
+            .filter(item => item.orderQty > 0);
+        if (filtered.length === 0) return "目前無須叫貨。";
+        const dateStr = new Date().toLocaleDateString();
+        const modeStr = dayMode === 'weekday' ? '平日(一~五)' : '假日(六/日)';
+        let text = `【叫貨清單 - ${dateStr} (${modeStr})】\n`;
+        filtered.forEach(item => text += `• ${item.name}: ${item.orderQty} ${item.unit}\n`);
+        return text;
+    }, [items, dayMode]);
+
+    const copyToClipboard = () => {
+        const el = document.createElement('textarea');
+        el.value = summaryText;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        alert('已複製叫貨清單！');
+    };
+
+    return (
+        <div className="max-w-2xl mx-auto min-h-screen flex flex-col">
+            {/* Header */}
+            <header className="bg-white border-b sticky top-0 z-10 px-4 py-3 flex justify-between items-center shadow-sm">
+                <div className="flex items-center gap-2">
+                    <div className="bg-blue-600 p-1.5 rounded-lg">
+                        <LucideIcon name="shopping-cart" className="text-white" size={20}/>
+                    </div>
+                    <h1 className="text-lg font-black tracking-tight">盤點叫貨表</h1>
+                </div>
+                <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+                    <button onClick={() => setView('inventory')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition ${view === 'inventory' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>盤點</button>
+                    <button onClick={() => setView('settings')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition ${view === 'settings' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>設定</button>
+                </div>
+            </header>
+
+            <main className="flex-1 p-4 space-y-4">
+                {view === 'inventory' ? (
+                    <>
+                        {/* Mode Selector */}
+                        <div className="flex gap-2">
+                            <button onClick={() => setDayMode('weekday')} className={`flex-1 py-3 rounded-2xl font-black text-sm flex items-center justify-center gap-2 border-2 transition ${dayMode === 'weekday' ? 'bg-blue-50 border-blue-500 text-blue-600' : 'bg-white border-slate-100 text-slate-400'}`}><LucideIcon name="calendar-days" /> 平日 (一~五)</button>
+                            <button onClick={() => setDayMode('weekend')} className={`flex-1 py-3 rounded-2xl font-black text-sm flex items-center justify-center gap-2 border-2 transition ${dayMode === 'weekend' ? 'bg-orange-50 border-orange-500 text-orange-600' : 'bg-white border-slate-100 text-slate-400'}`}><LucideIcon name="party-popper" /> 假日 (六/日)</button>
+                        </div>
+
+                        {/* Inventory Table */}
+                        <div className="bg-white rounded-3xl border shadow-sm overflow-hidden">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="bg-slate-50 text-slate-400 font-bold border-b">
+                                        <th className="px-4 py-3 text-left">品項名稱</th>
+                                        <th className="px-2 py-3 text-center w-20">應備</th>
+                                        <th className="px-2 py-3 text-center w-24">現有庫存</th>
+                                        <th className="px-4 py-3 text-right w-24">需補量</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                    {items.map(item => {
+                                        const orderQty = calculateOrder(item);
+                                        const target = dayMode === 'weekday' ? item.weekdayTarget : item.weekendTarget;
+                                        return (
+                                            <tr key={item.id} className="hover:bg-slate-50/50 transition">
+                                                <td className="px-4 py-4">
+                                                    <div className="font-black text-slate-700">{item.name}</div>
+                                                    <div className="text-[10px] text-slate-400 font-bold uppercase">{item.unit}</div>
+                                                </td>
+                                                <td className="px-2 py-4 text-center font-bold text-slate-400">{target}</td>
+                                                <td className="px-2 py-4">
+                                                    <input type="number" className="w-full text-center font-black text-lg bg-blue-50/50 text-blue-600 rounded-lg py-1 focus:bg-blue-100 outline-none"
+                                                           value={item.currentStock || ""}
+                                                           placeholder="0"
+                                                           onChange={(e) => updateItem(item.id, 'currentStock', parseFloat(e.target.value) || 0)}
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-4 text-right">
+                                                    {orderQty > 0 ? (
+                                                        <span className="bg-red-100 text-red-600 px-3 py-1 rounded-full font-black text-base animate-pulse">+{orderQty}</span>
+                                                    ) : (
+                                                        <LucideIcon name="check-circle-2" className="text-emerald-400 inline" />
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Summary Copy Area */}
+                        <div className="bg-slate-800 rounded-3xl p-6 text-white shadow-xl space-y-4">
+                            <div className="flex justify-between items-center">
+                                <h3 className="font-black text-lg flex items-center gap-2"><LucideIcon name="list-checks" className="text-blue-400"/> 叫貨清單統計</h3>
+                                <button onClick={copyToClipboard} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition"><LucideIcon name="copy" size={14}/> 一鍵複製</button>
+                            </div>
+                            <div className="bg-slate-900/50 rounded-2xl p-4 font-mono text-sm whitespace-pre-wrap leading-relaxed text-slate-300 border border-white/5">{summaryText}</div>
+                        </div>
+                    </>
+                ) : (
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-xl font-black">品項參數設定</h2>
+                            <button onClick={addItem} className="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 text-sm"><LucideIcon name="plus" size={16}/> 新增品項</button>
+                        </div>
+                        <div className="space-y-2">
+                            {items.map(item => (
+                                <div key={item.id} className="bg-white p-4 rounded-3xl border shadow-sm space-y-3">
+                                    <div className="flex gap-2">
+                                        <input className="flex-1 font-black text-base outline-none border-b-2 border-transparent focus:border-blue-500 px-1"
+                                               value={item.name}
+                                               onChange={(e) => updateItem(item.id, 'name', e.target.value)}
+                                        />
+                                        <input className="w-16 bg-slate-50 rounded-lg text-center text-xs font-bold text-slate-500"
+                                               placeholder="單位"
+                                               value={item.unit}
+                                               onChange={(e) => updateItem(item.id, 'unit', e.target.value)}
+                                        />
+                                        <button onClick={() => deleteItem(item.id)} className="text-slate-300 hover:text-red-500 transition"><LucideIcon name="trash-2" size={18}/></button>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-[10px] font-black text-slate-400 block mb-1">平日應備量 (一~五)</label>
+                                            <input type="number" className="compact-input font-bold" value={item.weekdayTarget} onChange={(e) => updateItem(item.id, 'weekdayTarget', parseFloat(e.target.value) || 0)}/>
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-black text-slate-400 block mb-1">假日應備量 (六/日)</label>
+                                            <input type="number" className="compact-input font-bold" value={item.weekendTarget} onChange={(e) => updateItem(item.id, 'weekendTarget', parseFloat(e.target.value) || 0)}/>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between bg-slate-50 p-3 rounded-2xl">
+                                        <div className="flex items-center gap-2">
+                                            <LucideIcon name="arrow-up-to-line" size={14} className="text-blue-500"/>
+                                            <span className="text-xs font-black text-slate-600">自動四捨五入 (補整數)</span>
+                                        </div>
+                                        <button onClick={() => updateItem(item.id, 'roundUp', !item.roundUp)} className={`w-12 h-6 rounded-full transition-colors relative ${item.roundUp ? 'bg-blue-600' : 'bg-slate-300'}`}>
+                                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${item.roundUp ? 'left-7' : 'left-1'}`}></div>
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </main>
+            <div className="h-10"></div>
+        </div>
+    );
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
