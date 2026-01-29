@@ -1,121 +1,124 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>盤點補貨計算工具 - 簡約統計版</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>盤點補貨計算工具</title>
 
-    <!-- UI / React -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- 🔥 Firebase SDK（CDN / compat） -->
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
-        body {
-            font-family: 'Noto Sans TC', sans-serif;
-            background-color: #f8fafc;
-            -webkit-tap-highlight-color: transparent;
-        }
-        input::-webkit-outer-spin-button,
-        input::-webkit-inner-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-        }
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 10px;
-        }
-    </style>
 </head>
-<body>
+<body class="bg-slate-100">
 <div id="root"></div>
 
 <script type="text/babel">
 const { useState, useEffect, useMemo } = React;
 
-/* ===============================
-   🔥 Firebase 初始化（你的 config）
-================================ */
-const firebaseConfig = {
+/* 🔥 Firebase config（你的） */
+firebase.initializeApp({
   apiKey: "AIzaSyDS7PQrDh05bIGu9WYCcFM0s1GvhzDwz4M",
   authDomain: "order-718b1.firebaseapp.com",
   projectId: "order-718b1",
   storageBucket: "order-718b1.firebasestorage.app",
   messagingSenderId: "454465000018",
   appId: "1:454465000018:web:ac7c787ba3e423a2a1458b",
-  measurementId: "G-3MC1RTW85K",
   databaseURL: "https://order-718b1-default-rtdb.asia-southeast1.firebasedatabase.app/"
-};
+});
 
-firebase.initializeApp(firebaseConfig);
-firebase.analytics();
-
-// 🔧 先備用（目前還沒用到，不影響）
 const db = firebase.database();
-
-/* ===============================
-   原本你的程式碼（未改）
-================================ */
-
-const Icon = ({ name, size = 18, className = "" }) => {
-    useEffect(() => {
-        if (window.lucide) {
-            window.lucide.createIcons({
-                attrs: { class: className, width: size, height: size, 'stroke-width': 2.5 },
-                nameAttr: 'data-lucide'
-            });
-        }
-    }, [name, size, className]);
-    return <i data-lucide={name}></i>;
-};
+const itemsRef = db.ref("inventory/items");
 
 const App = () => {
-    const [mode, setMode] = useState('inventory');
-    const [dayType, setDayType] = useState('weekday');
-    const [items, setItems] = useState(() => {
-        const saved = localStorage.getItem('restaurant_inventory_items_v4');
-        return saved ? JSON.parse(saved) : [];
+  const [items, setItems] = useState([]);
+  const [stockCounts, setStockCounts] = useState({});
+  const [dayType, setDayType] = useState("weekday");
+
+  /* 📥 讀取 Firebase（即時同步） */
+  useEffect(() => {
+    itemsRef.on("value", snap => {
+      const data = snap.val();
+      setItems(data ? Object.values(data) : []);
     });
-    const [stockCounts, setStockCounts] = useState({});
-    const [showCopySuccess, setShowCopySuccess] = useState(false);
+    return () => itemsRef.off();
+  }, []);
 
-    useEffect(() => {
-        localStorage.setItem('restaurant_inventory_items_v4', JSON.stringify(items));
-    }, [items]);
+  /* ✏️ 寫入 Firebase */
+  const saveItems = (newItems) => {
+    const obj = {};
+    newItems.forEach(i => obj[i.id] = i);
+    itemsRef.set(obj);
+  };
 
-    const addItem = () => {
-        setItems([...items, { id: Date.now(), name:'', weekdayMin:0, weekendMin:0, unit:'', shouldRound:false }]);
-        setMode('settings');
+  const addItem = () => {
+    const newItem = {
+      id: Date.now(),
+      name: "",
+      weekdayMin: 0,
+      weekendMin: 0,
+      unit: "",
+      shouldRound: false
     };
+    saveItems([...items, newItem]);
+  };
 
-    const calculateNeed = (item, stock) => {
-        const min = dayType === 'weekday' ? item.weekdayMin : item.weekendMin;
-        const need = min - (parseFloat(stock) || 0);
-        return need > 0 ? (item.shouldRound ? Math.round(need) : +need.toFixed(2)) : 0;
-    };
+  const updateItem = (id, field, value) => {
+    saveItems(items.map(i => i.id === id ? { ...i, [field]: value } : i));
+  };
 
-    const orderList = useMemo(() =>
-        items.map(i => {
-            const need = calculateNeed(i, stockCounts[i.id]);
-            return need > 0 ? { ...i, need } : null;
-        }).filter(Boolean)
-    , [items, stockCounts, dayType]);
+  const deleteItem = (id) => {
+    if(confirm("確定刪除？")) {
+      saveItems(items.filter(i => i.id !== id));
+    }
+  };
 
-    return <div className="p-6 text-center text-slate-500">（功能保持不變，Firebase 已接好）</div>;
+  const calcNeed = (item) => {
+    const min = dayType === "weekday" ? item.weekdayMin : item.weekendMin;
+    const cur = parseFloat(stockCounts[item.id] || 0);
+    const need = min - cur;
+    return need > 0 ? (item.shouldRound ? Math.round(need) : need.toFixed(2)) : 0;
+  };
+
+  return (
+    <div className="max-w-xl mx-auto p-4 bg-white shadow-xl min-h-screen">
+      <h1 className="text-xl font-bold mb-4">📦 補貨計算（即時同步）</h1>
+
+      <div className="flex gap-2 mb-4">
+        <button onClick={()=>setDayType("weekday")} className={`flex-1 p-2 ${dayType==="weekday"?"bg-blue-600 text-white":"bg-slate-200"}`}>平日</button>
+        <button onClick={()=>setDayType("weekend")} className={`flex-1 p-2 ${dayType==="weekend"?"bg-orange-600 text-white":"bg-slate-200"}`}>假日</button>
+      </div>
+
+      {items.map(item => (
+        <div key={item.id} className="border p-2 rounded mb-2">
+          <input value={item.name} onChange={e=>updateItem(item.id,"name",e.target.value)} placeholder="品項" className="w-full font-bold mb-1"/>
+          <div className="flex gap-2 text-sm">
+            <input type="number" value={item.weekdayMin} onChange={e=>updateItem(item.id,"weekdayMin",+e.target.value)} placeholder="平日標" className="w-1/3"/>
+            <input type="number" value={item.weekendMin} onChange={e=>updateItem(item.id,"weekendMin",+e.target.value)} placeholder="假日標" className="w-1/3"/>
+            <input placeholder="單位" value={item.unit} onChange={e=>updateItem(item.id,"unit",e.target.value)} className="w-1/3"/>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <input type="number" placeholder="現存" onChange={e=>setStockCounts({...stockCounts,[item.id]:e.target.value})} className="flex-1"/>
+            <span className="font-bold text-red-500">+{calcNeed(item)}</span>
+            <button onClick={()=>deleteItem(item.id)} className="text-red-500">✕</button>
+          </div>
+        </div>
+      ))}
+
+      <button onClick={addItem} className="w-full mt-4 p-3 bg-green-600 text-white font-bold rounded">
+        ➕ 新增品項（全裝置同步）
+      </button>
+    </div>
+  );
 };
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 </script>
 </body>
 </html>
