@@ -1,31 +1,46 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>多商家盤點補貨系統</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
-body { font-family: 'Noto Sans TC', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #f8fafc; }
-input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.custom-scrollbar::-webkit-scrollbar { width: 4px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-</style>
+  <meta charset="UTF-8" />
+  <title>多商家盤點補貨系統</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-<div id="root"></div>
+<body class="bg-gray-100 p-4">
 
-<script type="text/babel">
-const { useState, useEffect, useMemo } = React;
+<div id="app" class="max-w-4xl mx-auto space-y-4">
+  <h1 class="text-2xl font-bold">📦 盤點補貨系統</h1>
 
-// --- Firebase 初始化 ---
+  <!-- 商家切換 -->
+  <div class="flex gap-2">
+    <select id="merchantSelect" class="border p-2 flex-1"></select>
+    <button id="addMerchant" class="bg-blue-600 text-white px-3">＋商家</button>
+    <button id="delMerchant" class="bg-red-600 text-white px-3">刪除</button>
+  </div>
+
+  <!-- 新增品項 -->
+  <div class="bg-white p-3 rounded shadow space-y-2">
+    <h2 class="font-bold">➕ 新增品項</h2>
+    <input id="itemName" placeholder="品項名稱" class="border p-1 w-full" />
+    <input id="itemUnit" placeholder="單位（包 / 顆）" class="border p-1 w-full" />
+    <input id="itemMin" type="number" placeholder="最低庫存" class="border p-1 w-full" />
+    <button id="addItem" class="bg-green-600 text-white px-3 py-1">新增品項</button>
+  </div>
+
+  <!-- 品項盤點 -->
+  <div id="items" class="space-y-2"></div>
+
+  <!-- 補貨清單 -->
+  <div class="bg-yellow-50 p-3 rounded shadow">
+    <h2 class="font-bold">🧾 補貨清單</h2>
+    <div id="orderList" class="whitespace-pre-line"></div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, onValue, set, push, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
 const firebaseConfig = {
   apiKey: "AIzaSyCiWs5ZtstLxSSLQHufvnrWilnnGADFbEI",
   authDomain: "ngdd-8dd14.firebaseapp.com",
@@ -33,191 +48,114 @@ const firebaseConfig = {
   storageBucket: "ngdd-8dd14.firebasestorage.app",
   messagingSenderId: "780195335307",
   appId: "1:780195335307:web:c6e95d1e0a7ee92cf3588e",
-  databaseURL: "https://ngdd-8dd14-default-rtdb.firebaseio.com/"
-};
-if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-
-// --- Icon 元件 ---
-const Icon = ({ name, size=18, className="" }) => {
-  useEffect(() => { if(window.lucide) window.lucide.createIcons({attrs:{class:className,'stroke-width':2.5,width:size,height:size},nameAttr:'data-lucide'}); }, [name,size,className]);
-  return <i data-lucide={name} className={className}></i>;
+  databaseURL: "https://ngdd-8dd14-default-rtdb.firebaseio.com"
 };
 
-// --- App ---
-const App = () => {
-  const [merchants, setMerchants] = useState([]);
-  const [currentMerchant, setCurrentMerchant] = useState("");
-  const [items, setItems] = useState([]);
-  const [stockCounts, setStockCounts] = useState({});
-  const [dayType, setDayType] = useState('weekday');
-  const [loading, setLoading] = useState(true);
-  const [showCopySuccess, setShowCopySuccess] = useState(false);
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
-  // --- 初始化商家節點 ---
-  useEffect(() => {
-    const merchantsRef = db.ref('merchants');
-    merchantsRef.once('value', snapshot => {
-      const val = snapshot.val();
-      if(!val) {
-        // 沒有商家，自動建立一個初始商家
-        merchantsRef.set(['商家A']).then(() => loadMerchantData('商家A'));
-      } else {
-        setMerchants(val);
-        loadMerchantData(val[0]);
-      }
+let currentMerchant = null;
+let itemsData = {};
+let stockData = {};
+
+const merchantSelect = document.getElementById("merchantSelect");
+
+function loadMerchants() {
+  onValue(ref(db, "merchants"), snap => {
+    merchantSelect.innerHTML = "";
+    snap.forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c.key;
+      opt.textContent = c.val().name;
+      merchantSelect.appendChild(opt);
     });
-  }, []);
+    if (!currentMerchant && merchantSelect.value) {
+      currentMerchant = merchantSelect.value;
+      loadData();
+    }
+  });
+}
 
-  const loadMerchantData = (merchantName) => {
-    setCurrentMerchant(merchantName);
-    const merchantRef = db.ref(`inventory_tool/${merchantName}`);
-    merchantRef.once('value', snapshot => {
-      const val = snapshot.val();
-      if(!val) {
-        // 沒有資料，自動建立空 items
-        merchantRef.set({ items: [], stockCounts: {} }).then(() => {
-          setItems([]);
-          setStockCounts({});
-          setLoading(false);
-        });
-      } else {
-        setItems(val.items || []);
-        setStockCounts(val.stockCounts || {});
-        setLoading(false);
-      }
-    });
-  };
-
-  const syncToCloud = (newItems, newCounts) => {
-    if(!currentMerchant) return;
-    db.ref(`inventory_tool/${currentMerchant}`).set({ items:newItems, stockCounts:newCounts });
-  };
-
-  // --- 商家管理 ---
-  const addMerchant = () => {
-    const name = prompt("請輸入新商家名稱");
-    if(!name) return;
-    if(merchants.includes(name)) { alert("商家已存在"); return; }
-    const updated = [...merchants, name];
-    setMerchants(updated);
-    db.ref('merchants').set(updated);
-    // 初始化新商家節點
-    db.ref(`inventory_tool/${name}`).set({ items: [], stockCounts: {} });
-  };
-
-  const deleteMerchant = () => {
-    if(!currentMerchant) return;
-    if(!confirm(`確定刪除商家「${currentMerchant}」嗎？會刪除所有該商家資料`)) return;
-    const updated = merchants.filter(m=>m!==currentMerchant);
-    setMerchants(updated);
-    db.ref('merchants').set(updated);
-    db.ref(`inventory_tool/${currentMerchant}`).remove();
-    if(updated.length>0) loadMerchantData(updated[0]);
-    else { setCurrentMerchant(""); setItems([]); setStockCounts({}); }
-  };
-
-  const switchMerchant = (name) => {
-    setLoading(true);
-    loadMerchantData(name);
-  };
-
-  // --- 品項操作 ---
-  const addItem = () => {
-    const newItem = { id: Date.now(), name:'', weekdayMin:0, weekendMin:0, unit:'', shouldRound:false };
-    const updated = [...items,newItem];
-    setItems(updated);
-    syncToCloud(updated, stockCounts);
-  };
-
-  const updateItem = (id, field, value) => {
-    const updated = items.map(i=>i.id===id?{...i,[field]:value}:i);
-    setItems(updated);
-    syncToCloud(updated, stockCounts);
-  };
-
-  const deleteItem = (id) => {
-    if(!confirm("確定刪除此品項？")) return;
-    const updated = items.filter(i=>i.id!==id);
-    const newCounts = {...stockCounts}; delete newCounts[id];
-    setItems(updated); setStockCounts(newCounts);
-    syncToCloud(updated, newCounts);
-  };
-
-  const calculateNeed = (item, currentStockStr) => {
-    const currentStock = parseFloat(currentStockStr||0);
-    const min = dayType==='weekday'?item.weekdayMin:item.weekendMin;
-    let need = min-currentStock;
-    if(need<=0 || isNaN(need)) return 0;
-    return item.shouldRound?Math.round(need):parseFloat(need.toFixed(2));
-  };
-
-  const orderList = useMemo(()=>items.map(item=>{const need=calculateNeed(item, stockCounts[item.id]); return need>0?{name:item.name,need,unit:item.unit}:null}).filter(Boolean),[items,stockCounts,dayType]);
-
-  const copyOrder = () => {
-    const label = dayType==='weekday'?'平日':'假日';
-    const summary = orderList.map(i=>`${i.name}: ${i.need} ${i.unit}`).join('\n');
-    const text = summary?`【${label}補貨清單】\n${summary}`:"無需補貨";
-    const ta = document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-    setShowCopySuccess(true); setTimeout(()=>setShowCopySuccess(false),2000);
-  };
-
-  const clearCounts = () => { if(confirm("確定要清空所有輸入的庫存數值？")) { setStockCounts({}); syncToCloud(items, {}); } };
-
-  if(loading) return <div className="flex h-screen items-center justify-center text-slate-400 font-bold animate-pulse">盤點資料讀取中...</div>;
-
-  return (
-    <div className="min-h-screen max-w-3xl mx-auto bg-white shadow-md flex flex-col">
-      <header className="bg-slate-900 text-white p-4 sticky top-0 z-20 shadow-md">
-        <div className="flex justify-between items-center mb-2">
-          <h1 className="text-lg font-bold">多商家盤點補貨</h1>
-          <div className="flex gap-2">
-            <select value={currentMerchant} onChange={e=>switchMerchant(e.target.value)} className="rounded px-2 py-1 text-black text-sm">
-              {merchants.map(m=><option key={m} value={m}>{m}</option>)}
-            </select>
-            <button onClick={addMerchant} className="bg-green-500 px-2 py-1 rounded text-white text-xs">新增商家</button>
-            <button onClick={deleteMerchant} className="bg-red-500 px-2 py-1 rounded text-white text-xs">刪除商家</button>
-          </div>
-        </div>
-        <div className="flex bg-slate-800 p-1 rounded-lg">
-          <button onClick={()=>setDayType('weekday')} className={`flex-1 py-1.5 text-xs font-bold transition ${dayType==='weekday'?'bg-slate-700 text-blue-400 shadow-sm':'text-slate-500'}`}>平日</button>
-          <button onClick={()=>setDayType('weekend')} className={`flex-1 py-1.5 text-xs font-bold transition ${dayType==='weekend'?'bg-slate-700 text-orange-400 shadow-sm':'text-slate-500'}`}>假日</button>
-        </div>
-      </header>
-
-      <main className="flex-1 overflow-y-auto custom-scrollbar p-3">
-        {items.map(item=> {
-          const need = calculateNeed(item, stockCounts[item.id]);
-          return (
-            <div key={item.id} className="p-2 mb-2 bg-slate-50 rounded flex flex-col">
-              <div className="flex gap-2 items-center">
-                <input value={item.name} placeholder="品項名稱" onChange={e=>updateItem(item.id,'name',e.target.value)} className="flex-1 border-b border-slate-200 outline-none text-sm" />
-                <input value={item.unit} placeholder="單位" onChange={e=>updateItem(item.id,'unit',e.target.value)} className="w-12 text-center text-xs bg-slate-100 rounded" />
-                <button onClick={()=>deleteItem(item.id)} className="text-red-500"><Icon name="trash-2" size={14} /></button>
-              </div>
-              <div className="flex gap-2 items-center mt-1">
-                <input type="number" value={item.weekdayMin} onChange={e=>updateItem(item.id,'weekdayMin',parseFloat(e.target.value)||0)} className="flex-1 text-xs bg-slate-100 rounded p-1" />
-                <input type="number" value={item.weekendMin} onChange={e=>updateItem(item.id,'weekendMin',parseFloat(e.target.value)||0)} className="flex-1 text-xs bg-slate-100 rounded p-1" />
-                <button onClick={()=>updateItem(item.id,'shouldRound',!item.shouldRound)} className={`px-2 py-1 rounded text-xs ${item.shouldRound?'bg-green-100 text-green-600':'bg-slate-100 text-slate-400'}`}>四捨五入</button>
-              </div>
-              <div className="text-right mt-1 font-bold text-red-500">{need>0?`需補貨: ${need} ${item.unit}`:''}</div>
-            </div>
-        )})}
-        <button onClick={addItem} className="w-full py-2 mt-2 border-2 border-dashed border-slate-200 rounded text-sm text-slate-400 flex items-center justify-center gap-2"><Icon name="plus" size={16}/>新增品項</button>
-      </main>
-
-      <footer className="bg-slate-50 border-t border-slate-200 shadow-inner p-3">
-        <div className="bg-white border border-slate-200 rounded-lg p-2 max-h-24 overflow-y-auto custom-scrollbar mb-2">
-          {orderList.length>0?orderList.map((i,idx)=><div key={idx} className="text-xs text-slate-700 font-medium">{i.name} +{i.need} {i.unit}</div>):<div className="text-xs text-center text-slate-300">目前無缺貨品項</div>}
-        </div>
-        <button onClick={copyOrder} className={`w-full py-2 rounded font-bold text-white ${showCopySuccess?'bg-green-500':'bg-blue-600'}`}>{showCopySuccess?'已複製':'一鍵複製補貨清單'}</button>
-      </footer>
-    </div>
-  );
+merchantSelect.onchange = () => {
+  currentMerchant = merchantSelect.value;
+  loadData();
 };
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
+document.getElementById("addMerchant").onclick = () => {
+  const name = prompt("商家名稱");
+  if (!name) return;
+  const id = "m_" + Date.now();
+  set(ref(db, `merchants/${id}`), { name });
+};
+
+document.getElementById("delMerchant").onclick = () => {
+  if (!currentMerchant) return;
+  if (confirm("確定刪除商家？")) {
+    remove(ref(db, `merchants/${currentMerchant}`));
+    remove(ref(db, `data/${currentMerchant}`));
+  }
+};
+
+function loadData() {
+  onValue(ref(db, `data/${currentMerchant}/items`), s => {
+    itemsData = s.val() || {};
+    renderItems();
+  });
+  onValue(ref(db, `data/${currentMerchant}/stocks`), s => {
+    stockData = s.val() || {};
+    renderItems();
+  });
+}
+
+document.getElementById("addItem").onclick = () => {
+  const name = itemName.value;
+  if (!name) return;
+  push(ref(db, `data/${currentMerchant}/items`), {
+    name,
+    unit: itemUnit.value,
+    min: Number(itemMin.value),
+    links: []
+  });
+  itemName.value = itemUnit.value = itemMin.value = "";
+};
+
+function renderItems() {
+  const box = document.getElementById("items");
+  box.innerHTML = "";
+  let orderText = "";
+
+  Object.entries(itemsData).forEach(([id, item]) => {
+    const current = stockData[id] || 0;
+    const need = Math.max(0, item.min - current);
+
+    const div = document.createElement("div");
+    div.className = "bg-white p-2 rounded shadow";
+
+    div.innerHTML = `
+      <div class="font-bold">${item.name}（最低 ${item.min}${item.unit}）</div>
+      <input type="number" class="border p-1 w-full mt-1" value="${current}" />
+    `;
+
+    div.querySelector("input").oninput = e => {
+      set(ref(db, `data/${currentMerchant}/stocks/${id}`), Number(e.target.value));
+    };
+
+    box.appendChild(div);
+
+    if (need > 0) {
+      orderText += `${item.name} +${need}${item.unit}\n`;
+      (item.links || []).forEach(l => {
+        orderText += `  ・${l.name} +${l.qty * need}${l.unit}\n`;
+      });
+    }
+  });
+
+  document.getElementById("orderList").textContent =
+    orderText || "目前無需補貨";
+}
+
+loadMerchants();
 </script>
+
 </body>
 </html>
