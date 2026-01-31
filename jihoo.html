@@ -3,28 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>多商家盤點系統</title>
+<title>盤點補貨管理</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-
 <style>
-body { font-family: 'Noto Sans TC', sans-serif; background:#f8fafc; }
-input::-webkit-outer-spin-button,
-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+body { font-family: 'Noto Sans TC', sans-serif; background: #f8fafc; }
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 </style>
 </head>
 <body>
 <div id="root"></div>
 
 <script type="text/babel">
-// ===== Firebase 設定 =====
+const { useState, useEffect, useMemo } = React;
+
+// ---------- Firebase 初始化 ----------
 const firebaseConfig = {
   apiKey: "AIzaSyCu_W2qzTZTMm0cOh1Gc7ys8uDKJEkzD7M",
   authDomain: "all-sun-e7472.firebaseapp.com",
@@ -32,131 +31,127 @@ const firebaseConfig = {
   storageBucket: "all-sun-e7472.firebasestorage.app",
   messagingSenderId: "679291601652",
   appId: "1:679291601652:web:af747f74bdb9afe0bc94a1",
-  measurementId: "G-JP2QM56TC5",
   databaseURL: "https://all-sun-e7472-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-const { useState, useEffect, useMemo } = React;
-
-// ===== App =====
+// ---------- App ----------
 const App = () => {
-  const [items, setItems] = useState([]);
-  const [stockCounts, setStockCounts] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false); // 管理模式
-  const [dayType, setDayType] = useState('weekday');
+    const [items, setItems] = useState([]);
+    const [stockCounts, setStockCounts] = useState({});
+    const [loading, setLoading] = useState(true);
+    const [showCopy, setShowCopy] = useState(false);
 
-  // 監聽 Firebase
-  useEffect(() => {
-    const ref = db.ref('inventory_tool');
-    ref.on('value', snapshot => {
-      const val = snapshot.val();
-      if(val){
-        setItems(val.items || []);
-        setStockCounts(val.stockCounts || {});
-      }
-      setLoading(false);
-    });
-    return () => ref.off();
-  }, []);
+    // 監聽 Firebase 資料
+    useEffect(() => {
+        const ref = db.ref('inventory_tool');
+        ref.on('value', snapshot => {
+            const val = snapshot.val();
+            if (val) {
+                setItems(val.items || []);
+                setStockCounts(val.stockCounts || {});
+            } else {
+                // 初始化資料
+                const initialData = {
+                    items: [],
+                    stockCounts: {}
+                };
+                ref.set(initialData);
+            }
+            setLoading(false);
+        });
+        return () => ref.off();
+    }, []);
 
-  const syncCloud = (newItems, newCounts) => {
-    db.ref('inventory_tool').update({ items: newItems, stockCounts: newCounts });
-  }
+    // 同步 Firebase
+    const sync = (newItems, newCounts) => {
+        db.ref('inventory_tool').update({ items: newItems, stockCounts: newCounts });
+    };
 
-  const addItem = () => {
-    const newItem = { id: Date.now(), name:'', weekdayMin:0, weekendMin:0, unit:'', related:[] };
-    const newItems = [...items, newItem];
-    setItems(newItems);
-    syncCloud(newItems, stockCounts);
-  }
+    const addItem = () => {
+        const newItem = { id: Date.now(), name: '', weekdayMin: 0, weekendMin: 0, unit: '', related: [] };
+        const newItems = [...items, newItem];
+        setItems(newItems);
+        sync(newItems, stockCounts);
+    };
 
-  const updateItem = (id, field, val) => {
-    const newItems = items.map(i => i.id===id ? {...i, [field]: val} : i);
-    setItems(newItems);
-    syncCloud(newItems, stockCounts);
-  }
+    const updateItem = (id, field, value) => {
+        const newItems = items.map(it => it.id === id ? { ...it, [field]: value } : it);
+        setItems(newItems);
+        sync(newItems, stockCounts);
+    };
 
-  const adjustStock = (id, delta) => {
-    const val = parseFloat(stockCounts[id]||0) + delta;
-    const newVal = val < 0 ? 0 : val;
-    const newCounts = {...stockCounts, [id]: newVal};
-    setStockCounts(newCounts);
-    syncCloud(items, newCounts);
-  }
+    const handleCountChange = (id, val) => {
+        const newCounts = {...stockCounts, [id]: val};
+        setStockCounts(newCounts);
+        sync(items, newCounts);
+    };
 
-  const calculateNeed = (item) => {
-    const cur = parseFloat(stockCounts[item.id]||0);
-    const target = dayType==='weekday'?item.weekdayMin:item.weekendMin;
-    let need = target - cur;
-    if(need<=0) return 0;
-    return Math.round(need*2)/2; // 四捨五入到0.5
-  }
+    // 計算需要補多少
+    const calculateNeed = (item, current) => {
+        const cur = parseFloat(current||0);
+        let need = Math.max(0, (item.weekdayMin||0) - cur);
+        return parseFloat(need.toFixed(2));
+    };
 
-  const orderList = useMemo(() => {
-    return items.map(item=>{
-      const need = calculateNeed(item);
-      if(need>0) return { related:item.related };
-      return null;
-    }).filter(Boolean);
-  }, [items, stockCounts, dayType]);
+    // 補貨清單
+    const orderList = useMemo(() => {
+        return items
+            .filter(item => calculateNeed(item, stockCounts[item.id]) > 0)
+            .map(item => ({ ...item, need: calculateNeed(item, stockCounts[item.id]) }));
+    }, [items, stockCounts]);
 
-  const copyOrder = () => {
-    const text = orderList.map(i=>i.related.join(', ')).join('\n');
-    if(!text){ alert('沒有補貨項目'); return;}
-    const ta = document.createElement('textarea');
-    ta.value = text; document.body.appendChild(ta); ta.select();
-    document.execCommand('copy'); document.body.removeChild(ta);
-    alert('已複製補貨清單到剪貼簿！');
-  }
+    const copyOrder = () => {
+        const text = orderList.map(i => {
+            if(i.related && i.related.length) return i.related.join(", ");
+            return `${i.name} ${i.need} ${i.unit}`;
+        }).join("\n");
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setShowCopy(true);
+        setTimeout(() => setShowCopy(false), 2000);
+    };
 
-  if(loading) return <div className="flex h-screen items-center justify-center text-slate-400 font-bold animate-pulse">盤點資料讀取中...</div>
+    if(loading) return <div className="flex h-screen items-center justify-center text-slate-400 font-bold animate-pulse">盤點資料讀取中...</div>;
 
-  return (
-    <div className="max-w-xl mx-auto p-4">
-      <header className="flex justify-between items-center mb-3">
-        <h1 className="text-xl font-bold">多商家盤點工具</h1>
-        <button onClick={()=>setIsAdmin(!isAdmin)} className="px-2 py-1 border rounded text-sm">{isAdmin?'完成管理':'管理模式'}</button>
-      </header>
-
-      {/* 日別切換 */}
-      <div className="flex gap-2 mb-4">
-        <button onClick={()=>setDayType('weekday')} className={`flex-1 py-1 rounded text-xs font-bold ${dayType==='weekday'?'bg-blue-600 text-white':'bg-gray-200'}`}>平日</button>
-        <button onClick={()=>setDayType('weekend')} className={`flex-1 py-1 rounded text-xs font-bold ${dayType==='weekend'?'bg-orange-500 text-white':'bg-gray-200'}`}>假日</button>
-      </div>
-
-      {/* 盤點列表 */}
-      <div className="space-y-2 mb-4">
-        {items.map(item=>(
-          <div key={item.id} className="flex gap-2 items-center">
-            <input type="text" value={item.name} readOnly={!isAdmin} onChange={e=>updateItem(item.id,'name',e.target.value)} placeholder="品項名稱" className="flex-1 border rounded p-1 text-sm"/>
-            <div className="flex gap-1">
-              <button onClick={()=>adjustStock(item.id,-0.5)} className="px-2 bg-gray-200 rounded">-0.5</button>
-              <input type="number" value={stockCounts[item.id]||0} onChange={e=>updateItem(item.id,'stock',parseFloat(e.target.value)||0)} className="w-16 border rounded p-1 text-center text-sm"/>
-              <button onClick={()=>adjustStock(item.id,0.5)} className="px-2 bg-gray-200 rounded">+0.5</button>
+    return (
+        <div className="max-w-2xl mx-auto min-h-screen p-3">
+            <h1 className="text-xl font-bold mb-3">盤點補貨工具</h1>
+            
+            {/* 盤點列表 */}
+            <div className="space-y-3 mb-5">
+                {items.map(item => (
+                    <div key={item.id} className="flex gap-2 items-center">
+                        <input 
+                            type="number" step="0.5" value={stockCounts[item.id]||''} 
+                            onChange={e => handleCountChange(item.id, e.target.value)}
+                            placeholder="現有量" className="flex-1 border rounded px-2 py-1 text-sm"
+                        />
+                        <span className="text-sm">{item.unit}</span>
+                    </div>
+                ))}
             </div>
-          </div>
-        ))}
-      </div>
 
-      {/* 新增品項按鈕 */}
-      {isAdmin && <button onClick={addItem} className="w-full py-2 bg-gray-100 border rounded text-sm mb-4">新增品項</button>}
+            {/* 新增品項 */}
+            <button onClick={addItem} className="w-full py-2 bg-blue-600 text-white rounded mb-5">新增品項</button>
 
-      {/* 補貨清單 */}
-      <div className="border p-2 rounded">
-        <div className="flex justify-between items-center mb-2">
-          <span className="font-bold text-sm">補貨清單 (關聯食材)</span>
-          <button onClick={copyOrder} className="px-2 py-1 bg-blue-500 text-white text-xs rounded">一鍵複製</button>
+            {/* 補貨清單 */}
+            <div className="bg-white p-3 rounded shadow">
+                <h2 className="font-bold mb-2">補貨清單</h2>
+                {orderList.length === 0 && <p className="text-sm text-slate-400">目前無需補貨</p>}
+                {orderList.map((i, idx) => (
+                    <p key={idx} className="text-sm">{i.related && i.related.length ? i.related.join(", ") : `${i.name} ${i.need} ${i.unit}`}</p>
+                ))}
+                <button onClick={copyOrder} className={`mt-2 w-full py-1.5 rounded ${showCopy ? 'bg-green-500':'bg-blue-600'} text-white`}>{showCopy?'已複製':'一鍵複製全部'}</button>
+            </div>
         </div>
-        <div className="text-sm">
-          {orderList.length>0? orderList.map((i,idx)=><div key={idx}>{i.related.join(', ')}</div>): <div className="text-gray-400">目前無需補貨</div>}
-        </div>
-      </div>
-    </div>
-  )
-}
+    );
+};
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);
