@@ -3,158 +3,191 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>盤點補貨管理</title>
+<title>盤點叫貨系統 - 多商家</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
 <style>
-body { font-family: 'Noto Sans TC', sans-serif; background: #f8fafc; }
-.custom-scrollbar::-webkit-scrollbar { width: 4px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+body { font-family: 'Noto Sans TC', sans-serif; background:#f8fafc; }
+input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.custom-scrollbar::-webkit-scrollbar{width:4px;}
+.custom-scrollbar::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:10px;}
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root" class="p-4"></div>
 
-<script type="text/babel">
-const { useState, useEffect, useMemo } = React;
+<script type="text/javascript">
+  // --- Firebase 初始化 ---
+  const firebaseConfig = {
+    apiKey: "AIzaSyCu_W2qzTZTMm0cOh1Gc7ys8uDKJEkzD7M",
+    authDomain: "all-sun-e7472.firebaseapp.com",
+    projectId: "all-sun-e7472",
+    storageBucket: "all-sun-e7472.firebasestorage.app",
+    messagingSenderId: "679291601652",
+    appId: "1:679291601652:web:af747f74bdb9afe0bc94a1",
+    measurementId: "G-JP2QM56TC5",
+    databaseURL: "https://all-sun-e7472-default-rtdb.asia-southeast1.firebasedatabase.app/"
+  };
+  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
 
-// ---------- Firebase 初始化 ----------
-const firebaseConfig = {
-  apiKey: "AIzaSyCu_W2qzTZTMm0cOh1Gc7ys8uDKJEkzD7M",
-  authDomain: "all-sun-e7472.firebaseapp.com",
-  projectId: "all-sun-e7472",
-  storageBucket: "all-sun-e7472.firebasestorage.app",
-  messagingSenderId: "679291601652",
-  appId: "1:679291601652:web:af747f74bdb9afe0bc94a1",
-  databaseURL: "https://all-sun-e7472-default-rtdb.asia-southeast1.firebasedatabase.app/"
-};
-if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+  // --- 基本資料 ---
+  let items = [];
+  let stockCounts = {};
+  let dayType = 'weekday'; // 平日
+  let managementMode = false;
 
-// ---------- App ----------
-const App = () => {
-    const [items, setItems] = useState([]);
-    const [stockCounts, setStockCounts] = useState({});
-    const [loading, setLoading] = useState(true);
-    const [showCopy, setShowCopy] = useState(false);
+  const root = document.getElementById('root');
 
-    // 監聽 Firebase 資料
-    useEffect(() => {
-        const ref = db.ref('inventory_tool');
-        ref.on('value', snapshot => {
-            const val = snapshot.val();
-            if (val) {
-                setItems(val.items || []);
-                setStockCounts(val.stockCounts || {});
-            } else {
-                // 初始化資料
-                const initialData = {
-                    items: [],
-                    stockCounts: {}
-                };
-                ref.set(initialData);
-            }
-            setLoading(false);
-        });
-        return () => ref.off();
-    }, []);
+  // --- 渲染 ---
+  function render() {
+    root.innerHTML = '';
+    const container = document.createElement('div');
 
-    // 同步 Firebase
-    const sync = (newItems, newCounts) => {
-        db.ref('inventory_tool').update({ items: newItems, stockCounts: newCounts });
+    // 標題 & 管理模式切換
+    const header = document.createElement('div');
+    header.className = 'flex justify-between mb-4';
+    header.innerHTML = `
+      <h1 class="text-xl font-bold">盤點叫貨系統</h1>
+      <button id="toggleManage" class="px-2 py-1 bg-blue-600 text-white rounded">${managementMode ? '完成設定' : '管理品項'}</button>
+    `;
+    container.appendChild(header);
+    root.appendChild(container);
+
+    document.getElementById('toggleManage').onclick = () => {
+      managementMode = !managementMode;
+      render();
     };
 
-    const addItem = () => {
-        const newItem = { id: Date.now(), name: '', weekdayMin: 0, weekendMin: 0, unit: '', related: [] };
-        const newItems = [...items, newItem];
-        setItems(newItems);
-        sync(newItems, stockCounts);
-    };
+    // 平日/假日切換
+    const dayDiv = document.createElement('div');
+    dayDiv.className = 'flex gap-2 mb-4';
+    dayDiv.innerHTML = `
+      <button id="btnWeekday" class="flex-1 py-1 ${dayType==='weekday'?'bg-blue-600 text-white':'bg-slate-200'}">平日</button>
+      <button id="btnWeekend" class="flex-1 py-1 ${dayType==='weekend'?'bg-orange-500 text-white':'bg-slate-200'}">假日</button>
+    `;
+    container.appendChild(dayDiv);
 
-    const updateItem = (id, field, value) => {
-        const newItems = items.map(it => it.id === id ? { ...it, [field]: value } : it);
-        setItems(newItems);
-        sync(newItems, stockCounts);
-    };
+    document.getElementById('btnWeekday').onclick = () => { dayType='weekday'; render(); };
+    document.getElementById('btnWeekend').onclick = () => { dayType='weekend'; render(); };
 
-    const handleCountChange = (id, val) => {
-        const newCounts = {...stockCounts, [id]: val};
-        setStockCounts(newCounts);
-        sync(items, newCounts);
-    };
+    // 品項列表
+    const listDiv = document.createElement('div');
+    listDiv.className = 'space-y-2 mb-4';
 
-    // 計算需要補多少
-    const calculateNeed = (item, current) => {
-        const cur = parseFloat(current||0);
-        let need = Math.max(0, (item.weekdayMin||0) - cur);
-        return parseFloat(need.toFixed(2));
-    };
+    items.forEach(item => {
+      const need = calculateNeed(item, stockCounts[item.id]);
+      const div = document.createElement('div');
+      div.className = 'flex items-center gap-2 p-2 bg-white rounded shadow-sm';
+
+      if (managementMode) {
+        div.innerHTML = `
+          <input value="${item.name}" placeholder="品項名稱" class="border-b flex-1">
+          <input type="number" value="${item.unit||0}" placeholder="單位" class="w-16">
+        `;
+        div.querySelector('input').oninput = e => { item.name=e.target.value; syncCloud(); };
+      } else {
+        div.innerHTML = `
+          <span class="flex-1">${item.name}</span>
+          <button onclick="adjustStock('${item.id}', -0.5)">-0.5</button>
+          <input type="number" step="0.5" value="${stockCounts[item.id]||0}" class="w-16 text-center">
+          <button onclick="adjustStock('${item.id}', 0.5)">+0.5</button>
+        `;
+        div.querySelector('input').oninput = e => { stockCounts[item.id]=parseFloat(e.target.value)||0; syncCloud(); render(); };
+      }
+      listDiv.appendChild(div);
+    });
+    container.appendChild(listDiv);
+
+    // 新增品項按鈕
+    if (managementMode) {
+      const addBtn = document.createElement('button');
+      addBtn.className = 'w-full py-2 border-dashed border-2 border-slate-300 rounded';
+      addBtn.innerText = '新增品項';
+      addBtn.onclick = () => { addItem(); };
+      container.appendChild(addBtn);
+    }
 
     // 補貨清單
-    const orderList = useMemo(() => {
-        return items
-            .filter(item => calculateNeed(item, stockCounts[item.id]) > 0)
-            .map(item => ({ ...item, need: calculateNeed(item, stockCounts[item.id]) }));
-    }, [items, stockCounts]);
+    const orderDiv = document.createElement('div');
+    orderDiv.className = 'mt-4 p-2 bg-white rounded shadow-sm';
+    orderDiv.innerHTML = '<h2 class="font-bold mb-2">補貨清單</h2>';
 
-    const copyOrder = () => {
-        const text = orderList.map(i => {
-            if(i.related && i.related.length) return i.related.join(", ");
-            return `${i.name} ${i.need} ${i.unit}`;
-        }).join("\n");
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        setShowCopy(true);
-        setTimeout(() => setShowCopy(false), 2000);
-    };
+    const orderList = items.map(item=>{
+      const need = calculateNeed(item, stockCounts[item.id]);
+      if(need>0){
+        const related = item.relatedItems||[];
+        return related.length>0 ? related.join(', ') : `${item.name} +${need} ${item.unit||''}`;
+      }
+      return null;
+    }).filter(Boolean);
 
-    if(loading) return <div className="flex h-screen items-center justify-center text-slate-400 font-bold animate-pulse">盤點資料讀取中...</div>;
+    if(orderList.length===0){
+      orderDiv.innerHTML += '<p class="text-sm text-slate-400">目前無需補貨</p>';
+    } else {
+      orderDiv.innerHTML += `<p class="text-sm">${orderList.join('， ')}</p>`;
+      const copyBtn = document.createElement('button');
+      copyBtn.innerText = '一鍵複製補貨清單';
+      copyBtn.className='mt-2 w-full py-2 bg-blue-600 text-white rounded';
+      copyBtn.onclick = ()=>{ copyOrder(orderList); };
+      orderDiv.appendChild(copyBtn);
+    }
 
-    return (
-        <div className="max-w-2xl mx-auto min-h-screen p-3">
-            <h1 className="text-xl font-bold mb-3">盤點補貨工具</h1>
-            
-            {/* 盤點列表 */}
-            <div className="space-y-3 mb-5">
-                {items.map(item => (
-                    <div key={item.id} className="flex gap-2 items-center">
-                        <input 
-                            type="number" step="0.5" value={stockCounts[item.id]||''} 
-                            onChange={e => handleCountChange(item.id, e.target.value)}
-                            placeholder="現有量" className="flex-1 border rounded px-2 py-1 text-sm"
-                        />
-                        <span className="text-sm">{item.unit}</span>
-                    </div>
-                ))}
-            </div>
+    container.appendChild(orderDiv);
+    root.appendChild(container);
+  }
 
-            {/* 新增品項 */}
-            <button onClick={addItem} className="w-full py-2 bg-blue-600 text-white rounded mb-5">新增品項</button>
+  function calculateNeed(item, stock){
+    const current = parseFloat(stock)||0;
+    const min = dayType==='weekday'?item.weekdayMin||0:item.weekendMin||0;
+    let need = min-current;
+    if(need<=0) return 0;
+    return item.shouldRound?Math.round(need):need;
+  }
 
-            {/* 補貨清單 */}
-            <div className="bg-white p-3 rounded shadow">
-                <h2 className="font-bold mb-2">補貨清單</h2>
-                {orderList.length === 0 && <p className="text-sm text-slate-400">目前無需補貨</p>}
-                {orderList.map((i, idx) => (
-                    <p key={idx} className="text-sm">{i.related && i.related.length ? i.related.join(", ") : `${i.name} ${i.need} ${i.unit}`}</p>
-                ))}
-                <button onClick={copyOrder} className={`mt-2 w-full py-1.5 rounded ${showCopy ? 'bg-green-500':'bg-blue-600'} text-white`}>{showCopy?'已複製':'一鍵複製全部'}</button>
-            </div>
-        </div>
-    );
-};
+  function adjustStock(id, delta){
+    stockCounts[id] = (parseFloat(stockCounts[id])||0)+delta;
+    if(stockCounts[id]<0) stockCounts[id]=0;
+    syncCloud();
+    render();
+  }
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
+  function addItem(){
+    const newItem = {id:Date.now(), name:'', weekdayMin:0, weekendMin:0, unit:'', relatedItems:[], shouldRound:false};
+    items.push(newItem);
+    syncCloud();
+    render();
+  }
+
+  function syncCloud(){
+    db.ref('inventory_tool').set({items, stockCounts});
+  }
+
+  function copyOrder(orderList){
+    const textArea = document.createElement('textarea');
+    textArea.value = orderList.join('\n');
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+    alert('已複製到剪貼簿');
+  }
+
+  // --- 初始化 ---
+  db.ref('inventory_tool').once('value').then(snapshot=>{
+    const val = snapshot.val();
+    if(val){
+      items = val.items||[];
+      stockCounts = val.stockCounts||{};
+    }
+    render();
+  }).catch(err=>{
+    console.error(err);
+    render();
+  });
+
 </script>
 </body>
 </html>
