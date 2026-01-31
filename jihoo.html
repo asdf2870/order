@@ -1,203 +1,154 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>多商家盤點補貨系統</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>盤點補貨工具</title>
 
-  <!-- Firebase v9 CDN -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getDatabase, ref, onValue, set, update, push, remove } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    /********************
-     * Firebase 設定
-     ********************/
-    const firebaseConfig = {
-      apiKey: "AIzaSyCiWs5ZtstLxSSLQHufvnrWilnnGADFbEI",
-      authDomain: "ngdd-8dd14.firebaseapp.com",
-      databaseURL: "https://ngdd-8dd14-default-rtdb.firebaseio.com",
-      projectId: "ngdd-8dd14",
-      storageBucket: "ngdd-8dd14.firebasestorage.app",
-      messagingSenderId: "780195335307",
-      appId: "1:780195335307:web:c6e95d1e0a7ee92cf3588e"
-    };
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    /********************
-     * 狀態
-     ********************/
-    let currentMerchant = null;
-    let merchants = {};
-    let items = {};
-    let isHoliday = false;
-
-    /********************
-     * DOM
-     ********************/
-    const merchantSelect = document.getElementById('merchantSelect');
-    const merchantList = document.getElementById('merchantList');
-    const itemList = document.getElementById('itemList');
-    const restockList = document.getElementById('restockList');
-
-    /********************
-     * 初始化 merchants
-     ********************/
-    const merchantsRef = ref(db, 'inventory_tool/merchants');
-    onValue(merchantsRef, snap => {
-      if (!snap.exists()) {
-        set(merchantsRef, { '商家A': true });
-        return;
-      }
-      merchants = snap.val();
-      renderMerchantSelect();
-    });
-
-    function renderMerchantSelect() {
-      merchantSelect.innerHTML = '';
-      Object.keys(merchants).forEach(name => {
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = name;
-        merchantSelect.appendChild(opt);
-      });
-      if (!currentMerchant) {
-        currentMerchant = Object.keys(merchants)[0];
-        merchantSelect.value = currentMerchant;
-        loadMerchantData();
-      }
-    }
-
-    window.changeMerchant = () => {
-      currentMerchant = merchantSelect.value;
-      loadMerchantData();
-    };
-
-    /********************
-     * 商家管理
-     ********************/
-    window.addMerchant = () => {
-      const name = prompt('輸入新商家名稱');
-      if (!name) return;
-      set(ref(db, `inventory_tool/merchants/${name}`), true);
-      set(ref(db, `inventory_tool/data/${name}`), { items: {} });
-    };
-
-    window.deleteMerchant = () => {
-      if (!currentMerchant) return;
-      if (!confirm(`確定刪除商家 ${currentMerchant}？`)) return;
-      remove(ref(db, `inventory_tool/merchants/${currentMerchant}`));
-      remove(ref(db, `inventory_tool/data/${currentMerchant}`));
-      currentMerchant = null;
-    };
-
-    /********************
-     * 載入商家資料
-     ********************/
-    function loadMerchantData() {
-      const dataRef = ref(db, `inventory_tool/data/${currentMerchant}/items`);
-      onValue(dataRef, snap => {
-        items = snap.val() || {};
-        renderItems();
-        renderRestock();
-      });
-    }
-
-    /********************
-     * 品項
-     ********************/
-    window.addItem = () => {
-      const name = document.getElementById('newItemName').value;
-      const min = Number(document.getElementById('newItemMin').value);
-      const related = document.getElementById('newItemRelated').value;
-      if (!name) return;
-      push(ref(db, `inventory_tool/data/${currentMerchant}/items`), {
-        name,
-        minNormal: min,
-        minHoliday: min,
-        stock: 0,
-        related: related.split(',').map(s => s.trim()).filter(Boolean)
-      });
-      document.getElementById('newItemName').value = '';
-      document.getElementById('newItemMin').value = '';
-      document.getElementById('newItemRelated').value = '';
-    };
-
-    function renderItems() {
-      itemList.innerHTML = '';
-      Object.entries(items).forEach(([id, item]) => {
-        const row = document.createElement('div');
-        row.className = 'grid grid-cols-3 gap-2 items-center';
-        row.innerHTML = `
-          <div>${item.name}</div>
-          <input type="number" value="${item.stock || 0}" class="border p-1" />
-          <button class="text-red-500">刪除</button>
-        `;
-        const input = row.querySelector('input');
-        input.onchange = e => update(ref(db, `inventory_tool/data/${currentMerchant}/items/${id}`), { stock: Number(e.target.value) });
-        row.querySelector('button').onclick = () => remove(ref(db, `inventory_tool/data/${currentMerchant}/items/${id}`));
-        itemList.appendChild(row);
-      });
-    }
-
-    /********************
-     * 補貨清單
-     ********************/
-    function renderRestock() {
-      restockList.innerHTML = '';
-      Object.values(items).forEach(item => {
-        const min = isHoliday ? item.minHoliday : item.minNormal;
-        const need = min - (item.stock || 0);
-        if (need > 0) {
-          const li = document.createElement('li');
-          li.textContent = item.related.length ? item.related.join('、') : `${item.name} ${need}`;
-          restockList.appendChild(li);
-        }
-      });
-    }
-
-    window.toggleHoliday = () => {
-      isHoliday = !isHoliday;
-      renderRestock();
-    };
-
-    window.copyRestock = () => {
-      const text = Array.from(restockList.children).map(li => li.textContent).join('\n');
-      navigator.clipboard.writeText(text);
-      alert('已複製補貨清單');
-    };
-  </script>
+<style>
+body { font-family: system-ui, -apple-system, BlinkMacSystemFont; background:#f8fafc }
+</style>
 </head>
-<body class="p-4 space-y-4">
-  <h1 class="text-xl font-bold">多商家盤點補貨系統</h1>
+<body>
+<div id="root"></div>
 
-  <div class="flex gap-2">
-    <select id="merchantSelect" onchange="changeMerchant()" class="border p-2"></select>
-    <button onclick="addMerchant()" class="border px-2">＋商家</button>
-    <button onclick="deleteMerchant()" class="border px-2 text-red-500">刪除商家</button>
-  </div>
+<script type="text/babel">
 
-  <div class="border p-3">
-    <h2 class="font-bold">品項盤點</h2>
-    <div id="itemList" class="space-y-2"></div>
-  </div>
+/* 🔥 Firebase 設定（用你現在那組即可） */
+const firebaseConfig = {
+  apiKey: "AIzaSyCiWs5ZtstLxSSLQHufvnrWilnnGADFbEI",
+  authDomain: "ngdd-8dd14.firebaseapp.com",
+  databaseURL: "https://ngdd-8dd14-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "ngdd-8dd14",
+};
 
-  <div class="border p-3">
-    <h2 class="font-bold">新增品項</h2>
-    <input id="newItemName" placeholder="品項名稱" class="border p-1 w-full mb-1" />
-    <input id="newItemMin" placeholder="最低庫存" type="number" class="border p-1 w-full mb-1" />
-    <input id="newItemRelated" placeholder="關聯食材（逗號分隔）" class="border p-1 w-full mb-1" />
-    <button onclick="addItem()" class="border px-2">新增品項</button>
-  </div>
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
-  <div class="border p-3">
-    <h2 class="font-bold">補貨清單</h2>
-    <button onclick="toggleHoliday()" class="border px-2">切換平/假日</button>
-    <button onclick="copyRestock()" class="border px-2">複製</button>
-    <ul id="restockList" class="list-disc pl-5"></ul>
-  </div>
+const { useState, useEffect } = React;
+
+function App() {
+  const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState("use"); // use | manage
+  const [dayType, setDayType] = useState("weekday");
+  const [merchant, setMerchant] = useState("default");
+  const [merchants, setMerchants] = useState({});
+  const [items, setItems] = useState([]);
+  const [stock, setStock] = useState({});
+
+  /* 初始化 */
+  useEffect(() => {
+    const ref = db.ref("app");
+    ref.on("value", snap => {
+      let data = snap.val();
+      if (!data) {
+        data = {
+          merchants: {
+            default: { name: "預設商家", items: [] }
+          }
+        };
+        ref.set(data);
+      }
+      setMerchants(data.merchants);
+      setItems(data.merchants[merchant]?.items || []);
+      setLoading(false);
+    });
+    return () => ref.off();
+  }, [merchant]);
+
+  const saveItems = newItems => {
+    db.ref(`app/merchants/${merchant}/items`).set(newItems);
+    setItems(newItems);
+  };
+
+  const need = item => {
+    const current = Number(stock[item.id] || 0);
+    const min = dayType === "weekday" ? item.weekdayMin : item.weekendMin;
+    return Math.max(min - current, 0);
+  };
+
+  const orderList = [];
+  items.forEach(item => {
+    const n = need(item);
+    if (n > 0) {
+      if (item.related?.trim()) {
+        item.related.split("\n").forEach(r => orderList.push(r));
+      } else {
+        orderList.push(`${item.name} ${n}${item.unit || ""}`);
+      }
+    }
+  });
+
+  if (loading) {
+    return <div className="p-10 text-center text-slate-400">盤點資料讀取中…</div>;
+  }
+
+  return (
+    <div className="max-w-md mx-auto bg-white min-h-screen flex flex-col">
+
+      {/* Header */}
+      <div className="p-4 border-b flex justify-between items-center">
+        <div className="font-bold">盤點</div>
+        <button
+          className="text-sm text-slate-500"
+          onClick={() => setMode(mode === "use" ? "manage" : "use")}
+        >
+          {mode === "use" ? "管理" : "完成"}
+        </button>
+      </div>
+
+      {/* Day Switch */}
+      <div className="flex text-sm border-b">
+        <button className={`flex-1 p-2 ${dayType==="weekday"?"font-bold":""}`} onClick={()=>setDayType("weekday")}>平日</button>
+        <button className={`flex-1 p-2 ${dayType==="weekend"?"font-bold":""}`} onClick={()=>setDayType("weekend")}>假日</button>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 divide-y">
+        {items.map(item => (
+          <div key={item.id} className="flex items-center p-3 gap-2">
+            <div className="flex-1 truncate">{item.name}</div>
+            <input
+              type="number"
+              className="w-16 text-right bg-slate-100 rounded px-2"
+              placeholder="現有"
+              value={stock[item.id] || ""}
+              onChange={e => setStock({...stock,[item.id]:e.target.value})}
+            />
+            <div className="w-16 text-right text-red-500">
+              {need(item) > 0 ? `+${need(item)}` : ""}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Order */}
+      <div className="p-3 border-t bg-slate-50">
+        <div className="text-xs whitespace-pre-line mb-2">
+          {orderList.join("\n") || "目前無需補貨"}
+        </div>
+        <button
+          className="w-full bg-black text-white py-2 rounded"
+          onClick={() => navigator.clipboard.writeText(orderList.join("\n"))}
+        >
+          一鍵複製補貨清單
+        </button>
+      </div>
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+</script>
 </body>
 </html>
