@@ -4,21 +4,25 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>盤點叫貨系統 - 多商家</title>
+
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
 <style>
 body { font-family: 'Noto Sans TC', sans-serif; background:#f8fafc; }
-input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
 .custom-scrollbar::-webkit-scrollbar{width:4px;}
 .custom-scrollbar::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:10px;}
 </style>
 </head>
-<body>
-<div id="root" class="p-4"></div>
 
-<script type="text/javascript">
+<body>
+<div id="root" class="p-4 max-w-xl mx-auto"></div>
+
+<script>
+/* ================= Firebase ================= */
 const firebaseConfig = {
   apiKey: "AIzaSyCu_W2qzTZTMm0cOh1Gc7ys8uDKJEkzD7M",
   authDomain: "all-sun-e7472.firebaseapp.com",
@@ -26,15 +30,14 @@ const firebaseConfig = {
   storageBucket: "all-sun-e7472.firebasestorage.app",
   messagingSenderId: "679291601652",
   appId: "1:679291601652:web:af747f74bdb9afe0bc94a1",
-  measurementId: "G-JP2QM56TC5",
   databaseURL: "https://all-sun-e7472-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
-if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-let merchants = ["商家A","商家B"];
-let currentMerchant = merchants[0];
-
+/* ================= 狀態 ================= */
+let merchants = [];
+let currentMerchant = '';
 let items = [];
 let stockCounts = {};
 let dayType = 'weekday';
@@ -42,211 +45,192 @@ let managementMode = false;
 
 const root = document.getElementById('root');
 
-function render(){
-  root.innerHTML='';
-  const container = document.createElement('div');
-
-  // 一鍵清空盤點數值
-  const clearBtn = document.createElement('button');
-  clearBtn.innerText = '清空所有盤點數值';
-  clearBtn.className = 'mb-4 px-3 py-1 bg-red-500 text-white rounded';
-  clearBtn.onclick = ()=>{
-    if(confirm('確定清空所有輸入數值嗎？')){
-      stockCounts={};
-      syncCloud();
-      render();
+/* ================= 商家清單（✔ 存 Firebase） ================= */
+function loadMerchants() {
+  db.ref('inventory_tool/merchants').once('value').then(snap => {
+    const val = snap.val();
+    if (val) {
+      merchants = Object.keys(val);
+      if (!currentMerchant || !merchants.includes(currentMerchant)) {
+        currentMerchant = merchants[0];
+      }
+    } else {
+      merchants = ['商家A'];
+      currentMerchant = '商家A';
+      db.ref('inventory_tool/merchants').set({ 商家A: true });
     }
-  };
-  container.appendChild(clearBtn);
+    loadData();
+  });
+}
 
-  // 商家下拉 + 管理按鈕
-  const merchantDiv = document.createElement('div');
-  merchantDiv.className='mb-4 flex gap-2 items-center';
-  const selectHTML = `<select id="merchantSelect" class="border rounded p-1">
-    ${merchants.map(m=>`<option value="${m}" ${m===currentMerchant?'selected':''}>${m}</option>`).join('')}
-  </select>`;
-  merchantDiv.innerHTML = selectHTML + `<button id="manageMerchants" class="px-2 py-1 bg-slate-500 text-white rounded text-sm">管理商家</button>`;
-  container.appendChild(merchantDiv);
-  root.appendChild(container);
+/* ================= 資料 ================= */
+function loadData() {
+  db.ref('inventory_tool/' + currentMerchant).once('value').then(snap => {
+    const val = snap.val();
+    items = val?.items || [];
+    stockCounts = val?.stockCounts || {};
+    render();
+  });
+}
 
-  document.getElementById('merchantSelect').onchange = (e)=>{
-    currentMerchant=e.target.value;
+function syncCloud() {
+  db.ref('inventory_tool/' + currentMerchant).set({ items, stockCounts });
+}
+
+/* ================= 計算 ================= */
+function calculateNeed(item, stock) {
+  const current = parseFloat(stock) || 0;
+  const min = dayType === 'weekday' ? item.weekdayMin || 0 : item.weekendMin || 0;
+  const need = min - current;
+  return need > 0 ? need : 0;
+}
+
+/* ================= UI ================= */
+function render() {
+  root.innerHTML = '';
+
+  /* 商家選擇 */
+  const merchantBar = document.createElement('div');
+  merchantBar.className = 'flex gap-2 mb-4';
+  merchantBar.innerHTML = `
+    <select id="merchantSelect" class="flex-1 border rounded p-2">
+      ${merchants.map(m => `<option ${m===currentMerchant?'selected':''}>${m}</option>`).join('')}
+    </select>
+    <button id="manageMerchant" class="px-3 bg-slate-600 text-white rounded">管理商家</button>
+  `;
+  root.appendChild(merchantBar);
+
+  document.getElementById('merchantSelect').onchange = e => {
+    currentMerchant = e.target.value;
     loadData();
   };
 
-  // 商家管理
-  document.getElementById('manageMerchants').onclick = ()=>{
-    const action = prompt("輸入操作：新增商家名稱 或 刪除商家名稱 (格式: 新增:商家C 或 刪除:商家B)");
-    if(!action) return;
-    const [cmd, name] = action.split(':');
-    if(cmd==='新增' && name && !merchants.includes(name)){
-      merchants.push(name);
-      currentMerchant=name;
-    }else if(cmd==='刪除' && name && merchants.includes(name)){
-      if(confirm(`確定刪除 ${name} 嗎？`)){
-        merchants = merchants.filter(m=>m!==name);
-        if(currentMerchant===name) currentMerchant=merchants[0]||'';
+  document.getElementById('manageMerchant').onclick = () => {
+    const cmd = prompt('輸入：新增:商家C 或 刪除:商家B');
+    if (!cmd) return;
+    const [act, name] = cmd.split(':');
+    if (act === '新增' && name && !merchants.includes(name)) {
+      db.ref('inventory_tool/merchants/' + name).set(true);
+      currentMerchant = name;
+    }
+    if (act === '刪除' && name && merchants.includes(name)) {
+      if (confirm(`確定刪除 ${name}？`)) {
+        db.ref('inventory_tool/merchants/' + name).remove();
       }
     }
-    render();
-    loadData();
+    loadMerchants();
   };
 
-  // 標題 & 管理模式切換
-  const header = document.createElement('div');
-  header.className='flex justify-between mb-4';
-  header.innerHTML = `
-    <h1 class="text-xl font-bold">盤點叫貨系統</h1>
-    <button id="toggleManage" class="px-2 py-1 bg-blue-600 text-white rounded">${managementMode?'完成設定':'管理品項'}</button>
+  /* 標題 */
+  root.innerHTML += `
+    <div class="flex justify-between mb-3">
+      <h1 class="font-bold text-lg">盤點叫貨系統</h1>
+      <button id="toggleManage" class="px-3 py-1 bg-blue-600 text-white rounded">
+        ${managementMode ? '完成設定' : '管理品項'}
+      </button>
+    </div>
   `;
-  container.appendChild(header);
 
-  document.getElementById('toggleManage').onclick = ()=>{
+  document.getElementById('toggleManage').onclick = () => {
     managementMode = !managementMode;
     render();
   };
 
-  // 平日/假日切換
-  const dayDiv = document.createElement('div');
-  dayDiv.className='flex gap-2 mb-4';
-  dayDiv.innerHTML = `
-    <button id="btnWeekday" class="flex-1 py-1 ${dayType==='weekday'?'bg-blue-600 text-white':'bg-slate-200'}">平日</button>
-    <button id="btnWeekend" class="flex-1 py-1 ${dayType==='weekend'?'bg-orange-500 text-white':'bg-slate-200'}">假日</button>
+  /* 平假日 */
+  root.innerHTML += `
+    <div class="flex gap-2 mb-4">
+      <button onclick="dayType='weekday';render()" class="flex-1 py-1 ${dayType==='weekday'?'bg-blue-600 text-white':'bg-slate-200'}">平日</button>
+      <button onclick="dayType='weekend';render()" class="flex-1 py-1 ${dayType==='weekend'?'bg-orange-500 text-white':'bg-slate-200'}">假日</button>
+    </div>
   `;
-  container.appendChild(dayDiv);
-  document.getElementById('btnWeekday').onclick = ()=>{ dayType='weekday'; render(); };
-  document.getElementById('btnWeekend').onclick = ()=>{ dayType='weekend'; render(); };
 
-  // 品項列表
-  const listDiv = document.createElement('div');
-  listDiv.className='space-y-2 mb-4';
-  items.forEach(item=>{
-    const div=document.createElement('div');
-    div.className='flex flex-col gap-1 p-2 bg-white rounded shadow-sm';
+  /* 品項 */
+  items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'bg-white p-2 mb-2 rounded shadow';
 
-    if(managementMode){
-      // 單行顯示：名稱 / 平日最低 / 假日最低 / 單位 / 關聯食材
+    if (managementMode) {
       div.innerHTML = `
-        <div class="flex gap-2 items-center">
-          <input value="${item.name}" placeholder="品項名稱" class="border-b flex-1">
-          <input type="number" value="${item.weekdayMin||0}" placeholder="平日最低" class="w-20 text-center">
-          <input type="number" value="${item.weekendMin||0}" placeholder="假日最低" class="w-20 text-center">
-          <input type="text" value="${item.unit||''}" placeholder="單位" class="w-20 text-center">
-          <input type="text" value="${item.relatedItems?item.relatedItems.join(',') : ''}" placeholder="關聯食材 (逗號分隔)" class="flex-1">
+        <input value="${item.name}" class="w-full border-b mb-1">
+        <div class="flex gap-2 text-sm">
+          <input type="number" value="${item.weekdayMin||0}" class="w-1/2 border p-1" placeholder="平日">
+          <input type="number" value="${item.weekendMin||0}" class="w-1/2 border p-1" placeholder="假日">
         </div>
+        <input value="${item.unit||''}" class="w-full border mt-1 p-1" placeholder="單位">
+        <input value="${(item.relatedItems||[]).join(',')}" class="w-full border mt-1 p-1" placeholder="關聯食材">
       `;
       const inputs = div.querySelectorAll('input');
-      inputs[0].oninput=e=>{ item.name=e.target.value; syncCloud(); };
-      inputs[1].oninput=e=>{ item.weekdayMin=parseFloat(e.target.value)||0; syncCloud(); };
-      inputs[2].oninput=e=>{ item.weekendMin=parseFloat(e.target.value)||0; syncCloud(); };
-      inputs[3].oninput=e=>{ item.unit=e.target.value; syncCloud(); };
-      inputs[4].oninput=e=>{ item.relatedItems = e.target.value.split(',').map(s=>s.trim()); syncCloud(); };
-    }else{
-      // 盤點區：只顯示 + / - 按鈕，不顯示旁邊數字
+      inputs[0].oninput = e => item.name = e.target.value;
+      inputs[1].oninput = e => item.weekdayMin = +e.target.value;
+      inputs[2].oninput = e => item.weekendMin = +e.target.value;
+      inputs[3].oninput = e => item.unit = e.target.value;
+      inputs[4].oninput = e => item.relatedItems = e.target.value.split(',').map(s=>s.trim());
+      inputs.forEach(i => i.onchange = syncCloud);
+    } else {
+      const need = calculateNeed(item, stockCounts[item.id]);
       div.innerHTML = `
-        <div class="flex items-center gap-2">
-          <span class="flex-1">${item.name}</span>
-          <button onclick="adjustStock('${item.id}',-0.5)">-</button>
-          <input type="number" step="0.5" value="${stockCounts[item.id]||0}" class="w-16 text-center">
-          <button onclick="adjustStock('${item.id}',0.5)">+</button>
-          <span>${item.unit||''}</span>
+        <div class="flex justify-between items-center">
+          <span>${item.name}</span>
+          <div class="flex items-center gap-2">
+            <button onclick="adjustStock('${item.id}',-0.5)">−</button>
+            <span>${stockCounts[item.id]||0} ${item.unit||''}</span>
+            <button onclick="adjustStock('${item.id}',0.5)">＋</button>
+          </div>
         </div>
       `;
-      div.querySelector('input').oninput = e=>{ stockCounts[item.id]=parseFloat(e.target.value)||0; syncCloud(); render(); };
     }
-    listDiv.appendChild(div);
+    root.appendChild(div);
   });
-  container.appendChild(listDiv);
 
-  // 新增品項按鈕
-  if(managementMode){
-    const addBtn=document.createElement('button');
-    addBtn.className='w-full py-2 border-dashed border-2 border-slate-300 rounded';
-    addBtn.innerText='新增品項';
-    addBtn.onclick=()=>{ addItem(); };
-    container.appendChild(addBtn);
+  if (managementMode) {
+    const btn = document.createElement('button');
+    btn.className = 'w-full border-dashed border-2 p-2';
+    btn.innerText = '新增品項';
+    btn.onclick = () => {
+      items.push({ id: Date.now(), name:'', weekdayMin:0, weekendMin:0, unit:'', relatedItems:[] });
+      syncCloud(); render();
+    };
+    root.appendChild(btn);
   }
 
-  // 補貨清單
-  const orderDiv=document.createElement('div');
-  orderDiv.className='mt-4 p-2 bg-white rounded shadow-sm';
-  orderDiv.innerHTML='<h2 class="font-bold mb-2">補貨清單</h2>';
-
-  const orderList=items.map(item=>{
-    const need = calculateNeed(item, stockCounts[item.id]);
-    if(need>0){
-      const related=item.relatedItems||[];
-      return related.length>0?related.join(', '):`${item.name} +${need} ${item.unit||''}`;
+  /* 補貨清單 */
+  const order = [];
+  items.forEach(i => {
+    const need = calculateNeed(i, stockCounts[i.id]);
+    if (need > 0) {
+      if (i.relatedItems?.length) order.push(...i.relatedItems);
+      else order.push(`${i.name} +${need} ${i.unit||''}`);
     }
-    return null;
-  }).filter(Boolean);
-
-  if(orderList.length===0) orderDiv.innerHTML+='<p class="text-sm text-slate-400">目前無需補貨</p>';
-  else{
-    orderDiv.innerHTML+=`<p class="text-sm">${orderList.join('， ')}</p>`;
-    const copyBtn=document.createElement('button');
-    copyBtn.innerText='一鍵複製補貨清單';
-    copyBtn.className='mt-2 w-full py-2 bg-blue-600 text-white rounded';
-    copyBtn.onclick=()=>{ copyOrder(orderList); };
-    orderDiv.appendChild(copyBtn);
-  }
-  container.appendChild(orderDiv);
-}
-
-function calculateNeed(item, stock){
-  const current = parseFloat(stock)||0;
-  const min = dayType==='weekday'?item.weekdayMin||0:item.weekendMin||0;
-  let need=min-current;
-  if(need<=0) return 0;
-  return item.shouldRound?Math.round(need):need;
-}
-
-function adjustStock(id, delta){
-  stockCounts[id]=(parseFloat(stockCounts[id])||0)+delta;
-  if(stockCounts[id]<0) stockCounts[id]=0;
-  syncCloud();
-  render();
-}
-
-function addItem(){
-  const newItem={id:Date.now(),name:'',weekdayMin:0,weekendMin:0,unit:'',relatedItems:[],shouldRound:false};
-  items.push(newItem);
-  syncCloud();
-  render();
-}
-
-function syncCloud(){
-  db.ref('inventory_tool/'+currentMerchant).set({items,stockCounts});
-}
-
-function copyOrder(orderList){
-  const ta=document.createElement('textarea');
-  ta.value=orderList.join('\n');
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand('copy');
-  document.body.removeChild(ta);
-  alert('已複製到剪貼簿');
-}
-
-function loadData(){
-  db.ref('inventory_tool/'+currentMerchant).once('value').then(snapshot=>{
-    const val=snapshot.val();
-    if(val){
-      items=val.items||[];
-      stockCounts=val.stockCounts||{};
-    }else{
-      items=[];
-      stockCounts={};
-    }
-    render();
-  }).catch(err=>{
-    console.error(err);
-    render();
   });
+
+  const orderDiv = document.createElement('div');
+  orderDiv.className = 'bg-white p-3 mt-4 rounded shadow';
+  orderDiv.innerHTML = `<h2 class="font-bold mb-2">補貨清單</h2>`;
+  if (order.length) {
+    orderDiv.innerHTML += `<p class="text-sm">${order.join('、')}</p>`;
+    const copy = document.createElement('button');
+    copy.className = 'w-full mt-2 bg-blue-600 text-white py-2 rounded';
+    copy.innerText = '一鍵複製補貨清單';
+    copy.onclick = () => {
+      navigator.clipboard.writeText(order.join('\n'));
+      alert('已複製');
+    };
+    orderDiv.appendChild(copy);
+  } else {
+    orderDiv.innerHTML += `<p class="text-sm text-slate-400">目前無需補貨</p>`;
+  }
+  root.appendChild(orderDiv);
 }
 
-loadData();
+/* ================= 操作 ================= */
+function adjustStock(id, d) {
+  stockCounts[id] = (stockCounts[id] || 0) + d;
+  if (stockCounts[id] < 0) stockCounts[id] = 0;
+  syncCloud(); render();
+}
+
+/* ================= 啟動 ================= */
+loadMerchants();
 </script>
 </body>
 </html>
