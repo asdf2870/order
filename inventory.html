@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>C25叫貨表-極簡單行版</title>
+    <title>C25叫貨表-主品項進位版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -128,7 +128,14 @@
                 const currentStock = parseFloat(currentStockStr || 0);
                 const min = dayType === 'weekday' ? item.weekdayMin : item.weekendMin;
                 let need = min - currentStock;
-                return need > 0 ? (item.shouldRound ? Math.ceil(need) : parseFloat(need.toFixed(2))) : 0;
+                
+                if (need <= 0) return 0;
+                
+                // 如果主品項勾選了進位
+                if (item.shouldRound) {
+                    return Math.ceil(need);
+                }
+                return parseFloat(need.toFixed(2));
             }, [dayType]);
 
             const finalOrderList = useMemo(() => {
@@ -143,22 +150,38 @@
                             if (!r.name) return;
                             const key = `${r.name}_${r.unit}`;
                             if (!rawMaterials[key]) {
-                                rawMaterials[key] = { name: r.name, need: 0, unit: r.unit };
+                                rawMaterials[key] = { 
+                                    name: r.name, 
+                                    need: 0, 
+                                    unit: r.unit, 
+                                    isLocked: !!r.isLocked 
+                                };
                             }
-                            rawMaterials[key].need += (needAmount * r.amount);
+                            
+                            if (r.isLocked) {
+                                rawMaterials[key].need += r.amount;
+                            } else {
+                                rawMaterials[key].need += (needAmount * r.amount);
+                            }
                         });
                     } else {
+                        // 無配方，視為原物料本身
                         const key = `${item.name}_${item.unit}`;
                         if (!rawMaterials[key]) {
-                            rawMaterials[key] = { name: item.name, need: 0, unit: item.unit };
+                            rawMaterials[key] = { 
+                                name: item.name, 
+                                need: 0, 
+                                unit: item.unit, 
+                                isLocked: false 
+                            };
                         }
                         rawMaterials[key].need += needAmount;
                     }
                 });
-                return Object.values(rawMaterials).map(m => ({
-                    ...m,
-                    need: Math.ceil(m.need * 100) / 100 
-                }));
+                
+                return Object.values(rawMaterials).map(m => {
+                    return { ...m, need: Math.ceil(m.need * 100) / 100 };
+                });
             }, [items, stockCounts, calculateNeed]);
 
             const copyOrder = () => {
@@ -257,6 +280,7 @@
                                                 <div className="flex items-center gap-1.5">
                                                     <span className="font-bold text-sm text-slate-800 truncate">{item.name || '未命名'}</span>
                                                     {item.recipe && item.recipe.length > 0 && <Icon name="flask-conical" size={10} className="text-blue-300" />}
+                                                    {item.shouldRound && <Icon name="arrow-up-to-line" size={10} className="text-blue-500" />}
                                                 </div>
                                                 <div className="text-[10px] text-slate-400 font-medium">需庫存: {dayType === 'weekday' ? item.weekdayMin : item.weekendMin} {item.unit}</div>
                                             </div>
@@ -302,13 +326,27 @@
                                                 }}
                                                 placeholder="品項名稱" className="flex-1 font-bold border-b border-slate-100 focus:border-blue-500 outline-none text-sm py-1"
                                             />
+                                            
+                                            {/* 主品項進位按鈕 */}
+                                            <button 
+                                                onClick={() => {
+                                                    const updatedItems = items.map(i => i.id === item.id ? { ...i, shouldRound: !i.shouldRound } : i);
+                                                    setItems(updatedItems);
+                                                    syncData(updatedItems, stockCounts);
+                                                }}
+                                                title={item.shouldRound ? "補貨量自動進位中" : "目前按比例補貨"}
+                                                className={`p-1.5 rounded transition-colors ${item.shouldRound ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-300'}`}
+                                            >
+                                                <Icon name="arrow-up-to-line" size={14} />
+                                            </button>
+
                                             <input 
                                                 value={item.unit} onChange={(e) => {
                                                     const updatedItems = items.map(i => i.id === item.id ? { ...i, unit: e.target.value } : i);
                                                     setItems(updatedItems);
                                                     syncData(updatedItems, stockCounts);
                                                 }}
-                                                placeholder="單位" className="w-12 bg-slate-50 rounded text-center text-xs font-bold p-1 outline-none"
+                                                placeholder="單位" className="w-10 bg-slate-50 rounded text-center text-xs font-bold p-1 outline-none"
                                             />
                                             <button onClick={() => {
                                                 if (window.confirm('刪製品項？')) {
@@ -365,7 +403,7 @@
                                                                     setItems(updatedItems);
                                                                     syncData(updatedItems, stockCounts);
                                                                 }}
-                                                                className="flex-1 text-xs outline-none font-bold"
+                                                                className="flex-1 text-xs outline-none font-bold min-w-0"
                                                             />
                                                             <input 
                                                                 type="number" placeholder="量" value={r.amount} 
@@ -376,7 +414,7 @@
                                                                     setItems(updatedItems);
                                                                     syncData(updatedItems, stockCounts);
                                                                 }}
-                                                                className="w-10 text-xs text-center border-x border-slate-50 outline-none"
+                                                                className="w-8 text-xs text-center border-x border-slate-50 outline-none"
                                                             />
                                                             <input 
                                                                 placeholder="單位" value={r.unit} 
@@ -389,16 +427,34 @@
                                                                 }}
                                                                 className="w-10 text-xs text-center outline-none text-slate-400"
                                                             />
+                                                            
+                                                            <div className="flex gap-0.5 border-l border-slate-100 pl-1">
+                                                                {/* 鎖定切換按鈕 */}
+                                                                <button 
+                                                                    onClick={() => {
+                                                                        const newRecipe = [...(item.recipe || [])];
+                                                                        newRecipe[rIndex].isLocked = !newRecipe[rIndex].isLocked;
+                                                                        const updatedItems = items.map(i => i.id === item.id ? { ...i, recipe: newRecipe } : i);
+                                                                        setItems(updatedItems);
+                                                                        syncData(updatedItems, stockCounts);
+                                                                    }}
+                                                                    title={r.isLocked ? "目前為鎖定固定量" : "目前隨主品項倍率變動"}
+                                                                    className={`p-1.5 rounded flex items-center justify-center transition-colors ${r.isLocked ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-300'}`}
+                                                                >
+                                                                    <Icon name={r.isLocked ? "lock" : "unlock"} size={12} />
+                                                                </button>
+                                                            </div>
+
                                                             <button onClick={() => {
                                                                 const newRecipe = item.recipe.filter((_, i) => i !== rIndex);
                                                                 const updatedItems = items.map(i => i.id === item.id ? { ...i, recipe: newRecipe } : i);
                                                                 setItems(updatedItems);
                                                                 syncData(updatedItems, stockCounts);
-                                                            }} className="text-slate-300"><Icon name="x" size={12}/></button>
+                                                            }} className="text-slate-300 ml-1"><Icon name="x" size={12}/></button>
                                                         </div>
                                                     ))}
                                                     <button onClick={() => {
-                                                        const newRecipe = [...(item.recipe || []), { name: '', amount: 1, unit: '' }];
+                                                        const newRecipe = [...(item.recipe || []), { name: '', amount: 1, unit: '', isLocked: false }];
                                                         const updatedItems = items.map(i => i.id === item.id ? { ...i, recipe: newRecipe } : i);
                                                         setItems(updatedItems);
                                                         syncData(updatedItems, stockCounts);
