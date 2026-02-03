@@ -51,12 +51,10 @@ function getDbPath() {
 }
 
 function loadMerchants() {
-  // 讀取該 page 下的商家
   db.ref('inventory_tool/' + pageId + '/merchants').once('value').then(snap=>{
     const val = snap.val() || {};
     merchants = Object.keys(val);
     if(merchants.length === 0) {
-      // 初始一個商家
       const init = currentMerchant || '商家A';
       merchants = [init];
       currentMerchant = init;
@@ -99,14 +97,19 @@ function render() {
   `;
   container.appendChild(merchantDiv);
 
-  // 標題 + 管理模式
+  // 標題 + 管理模式 + 歸零按鈕
   const header = document.createElement('div');
-  header.className='flex justify-between mb-3';
+  header.className='flex justify-between mb-3 items-center';
   header.innerHTML = `
     <h1 class="font-bold text-lg">盤點叫貨系統</h1>
-    <button class="px-3 py-1 bg-blue-600 text-white rounded" onclick="toggleManage()">
-      ${managementMode?'完成設定':'管理品項'}
-    </button>
+    <div class="flex gap-2">
+      <button class="px-3 py-1 bg-blue-600 text-white rounded" onclick="toggleManage()">
+        ${managementMode?'完成設定':'管理品項'}
+      </button>
+      <button class="px-3 py-1 bg-red-600 text-white rounded" onclick="resetStocks()">
+        一鍵歸零
+      </button>
+    </div>
   `;
   container.appendChild(header);
 
@@ -138,10 +141,13 @@ function render() {
       div.innerHTML = `
         <div class="flex justify-between items-center">
           <span>${item.name}</span>
-          <div class="flex items-center gap-2">
-            <button onclick="adjustStock(${item.id},-0.5)">−</button>
-            <span>${stockCounts[item.id]||0} ${item.unit||''}</span>
-            <button onclick="adjustStock(${item.id},0.5)">＋</button>
+          <div class="flex items-center gap-1">
+            <button onclick="adjustStock(${item.id},-0.5)" class="w-8 h-8 bg-slate-200 rounded">−</button>
+            <input type="number" step="0.5" value="${stockCounts[item.id]||0}" 
+                   class="w-16 text-center border rounded" 
+                   onchange="manualInput(${item.id},this.value)">
+            <button onclick="adjustStock(${item.id},0.5)" class="w-8 h-8 bg-slate-200 rounded">＋</button>
+            <span class="ml-1">${item.unit||''}</span>
           </div>
         </div>
       `;
@@ -213,6 +219,14 @@ function adjustStock(id,delta){
   if(stockCounts[id]<0) stockCounts[id]=0;
   syncCloud(); render();
 }
+function manualInput(id,val){
+  stockCounts[id] = parseFloat(val)||0;
+  syncCloud(); render();
+}
+function resetStocks(){
+  Object.keys(stockCounts).forEach(k=>stockCounts[k]=0);
+  syncCloud(); render();
+}
 function calculateNeed(item,stock){
   const current = parseFloat(stock)||0;
   const min = dayType==='weekday'?item.weekdayMin||0:item.weekendMin||0;
@@ -224,4 +238,3 @@ loadMerchants();
 </script>
 </body>
 </html>
-
