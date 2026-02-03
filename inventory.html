@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>C25叫貨表-緊湊版</title>
+    <title>C25叫貨表-極簡單行版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -28,7 +28,7 @@
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .lucide-icon { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; }
-        .btn-press:active { transform: scale(0.92); }
+        .btn-press:active { transform: scale(0.9); transition: 0.1s; }
     </style>
 </head>
 <body>
@@ -116,58 +116,6 @@
                 });
             };
 
-            const addMerchant = () => {
-                const name = window.prompt('請輸入商家名稱');
-                if (name) {
-                    const id = 'm-' + Date.now();
-                    db.ref(`inventory_tool_v3/merchants/${id}`).set({ id, name });
-                    setCurrentMerchantId(id);
-                    setShowMerchantManager(false);
-                }
-            };
-
-            const renameMerchant = (id, oldName) => {
-                const newName = window.prompt('重新命名商家', oldName);
-                if (newName && newName !== oldName) {
-                    db.ref(`inventory_tool_v3/merchants/${id}`).update({ name: newName });
-                }
-            };
-
-            const deleteMerchant = (id) => {
-                if (merchants.length <= 1) return alert('必須保留至少一個商家');
-                if (window.confirm('確定刪除此商家及所有資料？')) {
-                    db.ref(`inventory_tool_v3/merchants/${id}`).remove();
-                    db.ref(`inventory_tool_v3/data/${id}`).remove();
-                    if (currentMerchantId === id) {
-                        setCurrentMerchantId(merchants.find(m => m.id !== id).id);
-                    }
-                }
-            };
-
-            const addItem = () => {
-                const newItem = { id: Date.now(), name: '', weekdayMin: 0, weekendMin: 0, unit: '', shouldRound: false, recipe: [] };
-                const updatedItems = [...items, newItem];
-                setItems(updatedItems);
-                syncData(updatedItems, stockCounts);
-            };
-
-            const updateItem = (id, field, value) => {
-                const updatedItems = items.map(item => item.id === id ? { ...item, [field]: value } : item);
-                setItems(updatedItems);
-                syncData(updatedItems, stockCounts);
-            };
-
-            const deleteItem = (id) => {
-                if (window.confirm('確定刪除此品項？')) {
-                    const updatedItems = items.filter(item => item.id !== id);
-                    const newCounts = { ...stockCounts };
-                    delete newCounts[id];
-                    setItems(updatedItems);
-                    setStockCounts(newCounts);
-                    syncData(updatedItems, newCounts);
-                }
-            };
-
             const adjustCount = (itemId, amount) => {
                 const current = parseFloat(stockCounts[itemId] || 0);
                 const nextValue = Math.max(0, current + amount);
@@ -175,43 +123,6 @@
                 const newCounts = { ...stockCounts, [itemId]: formattedValue };
                 setStockCounts(newCounts);
                 syncData(items, newCounts);
-            };
-
-            const addRecipeRow = (itemId) => {
-                const updatedItems = items.map(item => {
-                    if (item.id === itemId) {
-                        const recipe = item.recipe || [];
-                        return { ...item, recipe: [...recipe, { name: '', amount: 0, unit: '' }] };
-                    }
-                    return item;
-                });
-                setItems(updatedItems);
-                syncData(updatedItems, stockCounts);
-            };
-
-            const updateRecipeRow = (itemId, index, field, value) => {
-                const updatedItems = items.map(item => {
-                    if (item.id === itemId) {
-                        const newRecipe = [...item.recipe];
-                        newRecipe[index] = { ...newRecipe[index], [field]: value };
-                        return { ...item, recipe: newRecipe };
-                    }
-                    return item;
-                });
-                setItems(updatedItems);
-                syncData(updatedItems, stockCounts);
-            };
-
-            const deleteRecipeRow = (itemId, index) => {
-                const updatedItems = items.map(item => {
-                    if (item.id === itemId) {
-                        const newRecipe = item.recipe.filter((_, i) => i !== index);
-                        return { ...item, recipe: newRecipe };
-                    }
-                    return item;
-                });
-                setItems(updatedItems);
-                syncData(updatedItems, stockCounts);
             };
 
             const calculateNeed = useCallback((item, currentStockStr) => {
@@ -270,24 +181,23 @@
             const currentMerchantName = merchants.find(m => m.id === currentMerchantId)?.name || '讀取中...';
 
             if (loading && currentMerchantId) return (
-                <div className="flex h-screen flex-col items-center justify-center text-slate-400 gap-4">
-                    <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
-                    <div className="font-bold">同步中...</div>
+                <div className="flex h-screen items-center justify-center text-slate-400">
+                    <div className="w-8 h-8 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin"></div>
                 </div>
             );
 
             return (
-                <div className="min-h-screen flex flex-col max-w-2xl mx-auto bg-white shadow-2xl relative">
+                <div className="min-h-screen flex flex-col max-w-2xl mx-auto bg-white relative">
                     {/* Header */}
-                    <header className="bg-slate-900 text-white p-3 sticky top-0 z-40 shadow-lg">
+                    <header className="bg-slate-900 text-white p-3 sticky top-0 z-40 shadow-md">
                         <div className="flex justify-between items-center mb-2">
                             <button 
                                 onClick={() => setShowMerchantManager(!showMerchantManager)}
-                                className="flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-lg active:scale-95 transition-all"
+                                className="flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-lg active:scale-95"
                             >
                                 <Icon name="store" className="text-blue-400" size={16} />
                                 <span className="text-sm font-bold truncate max-w-[120px]">{currentMerchantName}</span>
-                                <Icon name="chevron-down" size={12} className={`text-slate-500 transition-transform ${showMerchantManager ? 'rotate-180' : ''}`} />
+                                <Icon name="chevron-down" size={12} className={`text-slate-500 ${showMerchantManager ? 'rotate-180' : ''}`} />
                             </button>
                             
                             <button 
@@ -300,24 +210,28 @@
                         </div>
 
                         {showMerchantManager && (
-                            <div className="absolute top-14 left-3 right-3 bg-white rounded-xl shadow-2xl border border-slate-200 text-slate-800 overflow-hidden z-50 animate-in fade-in slide-in-from-top-1">
+                            <div className="absolute top-14 left-3 right-3 bg-white rounded-xl shadow-2xl border border-slate-200 text-slate-800 overflow-hidden z-50">
                                 <div className="p-2 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                                    <span className="text-[10px] font-black text-slate-400 px-2 uppercase tracking-widest">更換商家</span>
-                                    <button onClick={addMerchant} className="bg-blue-600 text-white px-3 py-1 rounded-md text-[10px] font-black">新增</button>
+                                    <span className="text-[10px] font-black text-slate-400 px-2">切換商家</span>
+                                    <button onClick={() => {
+                                        const name = window.prompt('請輸入商家名稱');
+                                        if (name) {
+                                            const id = 'm-' + Date.now();
+                                            db.ref(`inventory_tool_v3/merchants/${id}`).set({ id, name });
+                                            setCurrentMerchantId(id);
+                                            setShowMerchantManager(false);
+                                        }
+                                    }} className="bg-blue-600 text-white px-3 py-1 rounded text-[10px] font-black">新增</button>
                                 </div>
                                 <div className="max-h-60 overflow-y-auto">
                                     {merchants.map(m => (
-                                        <div key={m.id} className={`flex items-center group ${currentMerchantId === m.id ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
+                                        <div key={m.id} className="flex items-center group hover:bg-slate-50 border-b border-slate-50">
                                             <button 
                                                 onClick={() => { setCurrentMerchantId(m.id); setShowMerchantManager(false); }}
-                                                className="flex-1 text-left px-4 py-3 text-sm font-bold"
+                                                className={`flex-1 text-left px-4 py-3 text-sm font-bold ${currentMerchantId === m.id ? 'text-blue-600' : ''}`}
                                             >
                                                 {m.name}
                                             </button>
-                                            <div className="px-3 flex gap-1 opacity-0 group-hover:opacity-100">
-                                                <button onClick={() => renameMerchant(m.id, m.name)} className="p-2 text-slate-400 hover:text-blue-500"><Icon name="pencil" size={14}/></button>
-                                                <button onClick={() => deleteMerchant(m.id)} className="p-2 text-slate-400 hover:text-red-500"><Icon name="trash-2" size={14}/></button>
-                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -325,149 +239,140 @@
                         )}
 
                         <div className="flex bg-slate-800 p-1 rounded-lg gap-1">
-                            <button onClick={() => setDayType('weekday')} className={`flex-1 py-1.5 rounded-md text-[11px] font-black transition-all ${dayType === 'weekday' ? 'bg-slate-700 text-blue-400 shadow-inner' : 'text-slate-500'}`}>平日標準</button>
-                            <button onClick={() => setDayType('weekend')} className={`flex-1 py-1.5 rounded-md text-[11px] font-black transition-all ${dayType === 'weekend' ? 'bg-slate-700 text-orange-400 shadow-inner' : 'text-slate-500'}`}>假日標準</button>
+                            <button onClick={() => setDayType('weekday')} className={`flex-1 py-1.5 rounded-md text-[11px] font-black transition-all ${dayType === 'weekday' ? 'bg-slate-700 text-blue-400' : 'text-slate-500'}`}>平日標準</button>
+                            <button onClick={() => setDayType('weekend')} className={`flex-1 py-1.5 rounded-md text-[11px] font-black transition-all ${dayType === 'weekend' ? 'bg-slate-700 text-orange-400' : 'text-slate-500'}`}>假日標準</button>
                         </div>
                     </header>
 
-                    <main className="flex-1 p-2 bg-slate-50">
+                    <main className="flex-1 p-2">
                         {mode === 'inventory' ? (
-                            <div className="space-y-1">
+                            <div className="divide-y divide-slate-100">
                                 {items.length === 0 ? (
-                                    <div className="py-20 text-center text-slate-300 text-sm font-bold">目前無品項，請點編輯新增</div>
+                                    <div className="py-20 text-center text-slate-300 text-sm font-bold italic">目前無品項</div>
                                 ) : (
-                                    items.map(item => {
-                                        const need = calculateNeed(item, stockCounts[item.id]);
-                                        const isShort = need > 0;
-                                        return (
-                                            <div key={item.id} className={`flex items-center gap-2 p-2 rounded-lg border transition-all ${isShort ? 'bg-white border-blue-200 shadow-sm' : 'bg-transparent border-transparent opacity-80'}`}>
-                                                {/* 品項名稱與標配 */}
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <span className={`font-bold text-sm truncate ${isShort ? 'text-blue-900' : 'text-slate-700'}`}>{item.name || '未命名'}</span>
-                                                        {item.recipe && item.recipe.length > 0 && <Icon name="flask-conical" size={10} className="text-blue-400" />}
-                                                    </div>
-                                                    <div className="text-[9px] text-slate-400 font-bold">標配: {dayType === 'weekday' ? item.weekdayMin : item.weekendMin}{item.unit}</div>
+                                    items.map(item => (
+                                        <div key={item.id} className="flex items-center gap-2 py-3 px-1">
+                                            {/* 名稱與灰色標配量 */}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="font-bold text-sm text-slate-800 truncate">{item.name || '未命名'}</span>
+                                                    {item.recipe && item.recipe.length > 0 && <Icon name="flask-conical" size={10} className="text-blue-300" />}
                                                 </div>
+                                                <div className="text-[10px] text-slate-400 font-medium">需庫存: {dayType === 'weekday' ? item.weekdayMin : item.weekendMin} {item.unit}</div>
+                                            </div>
 
-                                                {/* 狀態標籤 */}
-                                                {isShort && (
-                                                    <div className="px-2 py-0.5 rounded bg-blue-600 text-white text-[10px] font-black shrink-0">
-                                                        +{need}
-                                                    </div>
-                                                )}
-
-                                                {/* 操作區 */}
-                                                <div className="flex items-center gap-1 shrink-0">
-                                                    <button onClick={() => adjustCount(item.id, -0.5)} className="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-400 font-bold btn-press shadow-sm text-xs">-0.5</button>
-                                                    <div className="w-14 relative">
-                                                        <input 
-                                                            type="number" inputMode="decimal"
-                                                            value={stockCounts[item.id] || ''}
-                                                            onChange={(e) => {
-                                                                const newCounts = {...stockCounts, [item.id]: e.target.value};
-                                                                setStockCounts(newCounts);
-                                                                syncData(items, newCounts);
-                                                            }}
-                                                            className="w-full bg-slate-100 border border-slate-200 rounded-lg py-1.5 text-center text-sm font-black focus:border-blue-500 focus:bg-white outline-none"
-                                                        />
-                                                    </div>
-                                                    <button onClick={() => adjustCount(item.id, 0.5)} className="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg text-blue-500 font-bold btn-press shadow-sm text-xs">+0.5</button>
+                                            {/* 操作區：- | 輸入框 | + | 單位 */}
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <button onClick={() => adjustCount(item.id, -0.5)} className="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-200 rounded-lg text-slate-400 font-black btn-press text-lg">
+                                                    <Icon name="minus" size={14} />
+                                                </button>
+                                                <div className="w-14">
+                                                    <input 
+                                                        type="number" inputMode="decimal"
+                                                        value={stockCounts[item.id] || ''}
+                                                        onChange={(e) => {
+                                                            const newCounts = {...stockCounts, [item.id]: e.target.value};
+                                                            setStockCounts(newCounts);
+                                                            syncData(items, newCounts);
+                                                        }}
+                                                        placeholder="0"
+                                                        className="w-full bg-white border border-slate-200 rounded-lg py-1.5 text-center text-sm font-black focus:border-blue-500 outline-none shadow-inner"
+                                                    />
+                                                </div>
+                                                <button onClick={() => adjustCount(item.id, 0.5)} className="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg text-blue-600 font-black btn-press text-lg">
+                                                    <Icon name="plus" size={14} />
+                                                </button>
+                                                
+                                                {/* 單位顯示 */}
+                                                <div className="w-10 text-[11px] text-slate-400 font-bold pl-1 truncate">
+                                                    {item.unit}
                                                 </div>
                                             </div>
-                                        );
-                                    })
+                                        </div>
+                                    ))
                                 )}
                             </div>
                         ) : (
-                            <div className="space-y-4 pb-24">
+                            <div className="space-y-3 pb-24 px-1 pt-2">
                                 {items.map(item => (
-                                    <div key={item.id} className="p-4 bg-white border border-slate-200 rounded-2xl space-y-3 shadow-sm">
+                                    <div key={item.id} className="p-3 bg-white border border-slate-200 rounded-xl space-y-2">
                                         <div className="flex gap-2">
                                             <input 
-                                                value={item.name} onChange={(e) => updateItem(item.id, 'name', e.target.value)}
-                                                placeholder="品項名稱" className="flex-1 font-black border-b border-slate-100 focus:border-blue-500 outline-none text-sm py-1"
+                                                value={item.name} onChange={(e) => {
+                                                    const updatedItems = items.map(i => i.id === item.id ? { ...i, name: e.target.value } : i);
+                                                    setItems(updatedItems);
+                                                    syncData(updatedItems, stockCounts);
+                                                }}
+                                                placeholder="品項名稱" className="flex-1 font-bold border-b border-slate-100 focus:border-blue-500 outline-none text-sm py-1"
                                             />
                                             <input 
-                                                value={item.unit} onChange={(e) => updateItem(item.id, 'unit', e.target.value)}
-                                                placeholder="單位" className="w-14 bg-slate-50 rounded-lg text-center text-xs font-black p-1.5 outline-none"
+                                                value={item.unit} onChange={(e) => {
+                                                    const updatedItems = items.map(i => i.id === item.id ? { ...i, unit: e.target.value } : i);
+                                                    setItems(updatedItems);
+                                                    syncData(updatedItems, stockCounts);
+                                                }}
+                                                placeholder="單位" className="w-12 bg-slate-50 rounded text-center text-xs font-bold p-1 outline-none"
                                             />
-                                            <button onClick={() => deleteItem(item.id)} className="text-slate-300 hover:text-red-500 p-1.5"><Icon name="trash-2" size={16}/></button>
+                                            <button onClick={() => {
+                                                if (window.confirm('刪製品項？')) {
+                                                    const updatedItems = items.filter(i => i.id !== item.id);
+                                                    const newCounts = { ...stockCounts };
+                                                    delete newCounts[item.id];
+                                                    setItems(updatedItems);
+                                                    setStockCounts(newCounts);
+                                                    syncData(updatedItems, newCounts);
+                                                }
+                                            }} className="text-slate-300 hover:text-red-500"><Icon name="trash-2" size={14}/></button>
                                         </div>
-                                        
-                                        <div className="grid grid-cols-3 gap-2">
-                                            <div className="bg-blue-50 p-2 rounded-xl">
-                                                <span className="text-[9px] text-blue-500 font-black block mb-0.5">平日標配</span>
-                                                <input type="number" step="0.1" value={item.weekdayMin} onChange={(e) => updateItem(item.id, 'weekdayMin', parseFloat(e.target.value) || 0)} className="w-full bg-transparent font-black text-blue-900 outline-none text-sm" />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="bg-blue-50 px-2 py-1 rounded">
+                                                <span className="text-[9px] text-blue-500 font-bold block">平日標配</span>
+                                                <input type="number" step="0.1" value={item.weekdayMin} onChange={(e) => {
+                                                    const updatedItems = items.map(i => i.id === item.id ? { ...i, weekdayMin: parseFloat(e.target.value) || 0 } : i);
+                                                    setItems(updatedItems);
+                                                    syncData(updatedItems, stockCounts);
+                                                }} className="w-full bg-transparent font-bold text-blue-900 outline-none text-xs" />
                                             </div>
-                                            <div className="bg-orange-50 p-2 rounded-xl">
-                                                <span className="text-[9px] text-orange-500 font-black block mb-0.5">假日標配</span>
-                                                <input type="number" step="0.1" value={item.weekendMin} onChange={(e) => updateItem(item.id, 'weekendMin', parseFloat(e.target.value) || 0)} className="w-full bg-transparent font-black text-orange-900 outline-none text-sm" />
+                                            <div className="bg-orange-50 px-2 py-1 rounded">
+                                                <span className="text-[9px] text-orange-500 font-bold block">假日標配</span>
+                                                <input type="number" step="0.1" value={item.weekendMin} onChange={(e) => {
+                                                    const updatedItems = items.map(i => i.id === item.id ? { ...i, weekendMin: parseFloat(e.target.value) || 0 } : i);
+                                                    setItems(updatedItems);
+                                                    syncData(updatedItems, stockCounts);
+                                                }} className="w-full bg-transparent font-bold text-orange-900 outline-none text-xs" />
                                             </div>
-                                            <button 
-                                                onClick={() => updateItem(item.id, 'shouldRound', !item.shouldRound)}
-                                                className={`rounded-xl text-[9px] font-black transition-all border-2 ${item.shouldRound ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-100 text-slate-400'}`}
-                                            >
-                                                整數補貨
-                                            </button>
-                                        </div>
-
-                                        <div className="bg-slate-50 rounded-xl p-3 space-y-2 border border-slate-100">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] font-black text-slate-400">配方換算</span>
-                                                <button onClick={() => addRecipeRow(item.id)} className="text-[10px] text-blue-600 font-black">+ 新增</button>
-                                            </div>
-                                            {(item.recipe || []).map((r, idx) => (
-                                                <div key={idx} className="flex gap-1.5 items-center bg-white p-1.5 rounded-lg border border-slate-100">
-                                                    <input value={r.name} onChange={(e) => updateRecipeRow(item.id, idx, 'name', e.target.value)} placeholder="食材" className="flex-1 px-1 text-xs outline-none" />
-                                                    <input type="number" step="0.01" value={r.amount} onChange={(e) => updateRecipeRow(item.id, idx, 'amount', parseFloat(e.target.value) || 0)} className="w-10 bg-slate-50 rounded text-[10px] text-center font-black" />
-                                                    <input value={r.unit} onChange={(e) => updateRecipeRow(item.id, idx, 'unit', e.target.value)} className="w-8 bg-slate-50 rounded text-[10px] text-center" />
-                                                    <button onClick={() => deleteRecipeRow(item.id, idx)} className="text-slate-200"><Icon name="x" size={12}/></button>
-                                                </div>
-                                            ))}
                                         </div>
                                     </div>
                                 ))}
-                                <button onClick={addItem} className="w-full py-6 border-2 border-dashed border-slate-300 rounded-2xl text-slate-400 font-black flex flex-col items-center justify-center gap-2 hover:bg-blue-50 transition-all bg-white">
-                                    <Icon name="plus" size={24} />
-                                    <span className="text-xs">新增盤點品項</span>
+                                <button onClick={() => {
+                                    const newItem = { id: Date.now(), name: '', weekdayMin: 0, weekendMin: 0, unit: '', shouldRound: false, recipe: [] };
+                                    const updatedItems = [...items, newItem];
+                                    setItems(updatedItems);
+                                    syncData(updatedItems, stockCounts);
+                                }} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 font-bold text-xs flex flex-col items-center gap-1 hover:bg-slate-50">
+                                    <Icon name="plus" size={18} />
+                                    <span>新增品項</span>
                                 </button>
                             </div>
                         )}
                     </main>
 
                     {mode === 'inventory' && (
-                        <footer className="bg-white border-t border-slate-100 p-3 shadow-2xl z-30">
-                            <div className="bg-slate-900 rounded-xl p-3 mb-3 max-h-32 overflow-y-auto custom-scrollbar">
-                                <div className="flex justify-between items-center mb-2 border-b border-slate-800 pb-1">
-                                    <span className="text-[9px] font-black text-slate-500 uppercase">採購清單預覽</span>
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {finalOrderList.map((i, idx) => (
-                                        <div key={idx} className="bg-slate-800 px-2 py-1 rounded-md flex items-center gap-1.5">
-                                            <span className="text-[10px] font-bold text-slate-300">{i.name}</span>
-                                            <span className="text-[10px] font-black text-blue-400">+{i.need}</span>
-                                            <span className="text-[9px] text-slate-600">{i.unit}</span>
-                                        </div>
-                                    ))}
-                                    {finalOrderList.length === 0 && <span className="text-[10px] text-slate-600 py-2">目前無缺貨</span>}
-                                </div>
-                            </div>
-                            
+                        <footer className="bg-white border-t border-slate-100 p-3 shadow-2xl sticky bottom-0 z-30">
                             <div className="flex gap-2">
                                 <button 
-                                    onClick={() => { if(window.confirm('清空目前盤點數值？')) { setStockCounts({}); syncData(items, {}); } }}
-                                    className="w-12 h-12 bg-slate-100 rounded-xl text-slate-400 flex items-center justify-center active:scale-90"
+                                    onClick={() => { if(window.confirm('重置盤點？')) { setStockCounts({}); syncData(items, {}); } }}
+                                    className="w-12 h-12 bg-slate-50 rounded-xl text-slate-300 flex items-center justify-center active:scale-90"
                                 >
                                     <Icon name="rotate-ccw" size={18} />
                                 </button>
                                 <button 
                                     onClick={copyOrder} 
                                     disabled={finalOrderList.length === 0}
-                                    className={`flex-1 h-12 rounded-xl font-black text-white shadow-lg transition-all flex items-center justify-center gap-2 active:scale-[0.97] ${showCopySuccess ? 'bg-green-500' : (finalOrderList.length > 0 ? (dayType === 'weekday' ? 'bg-blue-600' : 'bg-orange-600') : 'bg-slate-300 shadow-none')}`}
+                                    className={`flex-1 h-12 rounded-xl font-black text-white shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95 ${showCopySuccess ? 'bg-green-500' : (finalOrderList.length > 0 ? (dayType === 'weekday' ? 'bg-blue-600' : 'bg-orange-600') : 'bg-slate-200 shadow-none')}`}
                                 >
-                                    <Icon name={showCopySuccess ? "check" : "copy"} size={16} />
-                                    {showCopySuccess ? "已複製" : "複製採購單"}
+                                    <Icon name={showCopySuccess ? "check" : "clipboard-copy"} size={16} />
+                                    {showCopySuccess ? "已複製到剪貼簿" : "產出採購單並複製"}
                                 </button>
                             </div>
                         </footer>
