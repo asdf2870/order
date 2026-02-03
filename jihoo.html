@@ -66,6 +66,16 @@ function syncCloud() {
   db.ref('inventory_tool/' + currentMerchant).set({ items, stockCounts });
 }
 
+/* 計算補貨量（原本就有的邏輯） */
+function calculateNeed(item, stock) {
+  const current = parseFloat(stock) || 0;
+  const min = dayType === 'weekday'
+    ? (item.weekdayMin || 0)
+    : (item.weekendMin || 0);
+  const need = min - current;
+  return need > 0 ? need : 0;
+}
+
 /* UI */
 function render() {
   root.innerHTML = `
@@ -95,13 +105,13 @@ function render() {
         ${managementMode ? `
           <input value="${item.name}" onchange="editItem(${item.id},'name',this.value)" class="w-full border-b mb-1">
           <div class="flex gap-2">
-            <input type="number" value="${item.weekdayMin||0}" onchange="editItem(${item.id},'weekdayMin',this.value)" class="w-1/2 border p-1" placeholder="平日">
-            <input type="number" value="${item.weekendMin||0}" onchange="editItem(${item.id},'weekendMin',this.value)" class="w-1/2 border p-1" placeholder="假日">
+            <input type="number" value="${item.weekdayMin||0}" onchange="editItem(${item.id},'weekdayMin',this.value)" class="w-1/2 border p-1" placeholder="平日最低">
+            <input type="number" value="${item.weekendMin||0}" onchange="editItem(${item.id},'weekendMin',this.value)" class="w-1/2 border p-1" placeholder="假日最低">
           </div>
           <input value="${item.unit||''}" onchange="editItem(${item.id},'unit',this.value)" class="w-full border p-1 mt-1" placeholder="單位">
           <input value="${(item.relatedItems||[]).join(',')}" onchange="editItem(${item.id},'relatedItems',this.value)" class="w-full border p-1 mt-1" placeholder="關聯食材">
         ` : `
-          <div class="flex justify-between">
+          <div class="flex justify-between items-center">
             <span>${item.name}</span>
             <div>
               <button onclick="adjustStock(${item.id},-0.5)">−</button>
@@ -116,6 +126,39 @@ function render() {
     ${managementMode ? `
       <button onclick="addItem()" class="w-full border-dashed border-2 p-2 mt-2">新增品項</button>
     `:''}
+
+    <!-- ✅ 補貨清單（補回來的部分） -->
+    <div class="mt-4 bg-white p-3 rounded shadow">
+      <h2 class="font-bold mb-2">補貨清單</h2>
+      ${renderOrderList()}
+    </div>
+  `;
+}
+
+/* 補貨清單 UI */
+function renderOrderList() {
+  const list = [];
+  items.forEach(item => {
+    const need = calculateNeed(item, stockCounts[item.id]);
+    if (need > 0) {
+      if (item.relatedItems && item.relatedItems.length > 0) {
+        list.push(...item.relatedItems);
+      } else {
+        list.push(`${item.name} +${need} ${item.unit||''}`);
+      }
+    }
+  });
+
+  if (list.length === 0) {
+    return `<p class="text-sm text-slate-400">目前無需補貨</p>`;
+  }
+
+  return `
+    <p class="text-sm mb-2">${list.join('， ')}</p>
+    <button onclick="copyOrder(${JSON.stringify(list)})"
+      class="w-full py-2 bg-blue-600 text-white rounded">
+      一鍵複製補貨清單
+    </button>
   `;
 }
 
@@ -123,6 +166,7 @@ function render() {
 function changeMerchant(m){ currentMerchant=m; loadData(); }
 function toggleManage(){ managementMode=!managementMode; render(); }
 function setDay(d){ dayType=d; render(); }
+
 function manageMerchant(){
   const cmd=prompt('新增:商家C 或 刪除:商家B');
   if(!cmd) return;
@@ -131,20 +175,28 @@ function manageMerchant(){
   if(a==='刪除') db.ref('inventory_tool/merchants/'+n).remove();
   loadMerchants();
 }
+
 function addItem(){
   items.push({id:Date.now(),name:'',weekdayMin:0,weekendMin:0,unit:'',relatedItems:[]});
   syncCloud(); render();
 }
+
 function editItem(id,k,v){
   const i=items.find(x=>x.id===id);
   if(k==='relatedItems') i[k]=v.split(',').map(s=>s.trim());
   else i[k]=isNaN(v)?v:+v;
   syncCloud();
 }
+
 function adjustStock(id,d){
   stockCounts[id]=(stockCounts[id]||0)+d;
   if(stockCounts[id]<0) stockCounts[id]=0;
   syncCloud(); render();
+}
+
+function copyOrder(list){
+  navigator.clipboard.writeText(list.join('\n'));
+  alert('已複製到剪貼簿');
 }
 
 /* 啟動 */
