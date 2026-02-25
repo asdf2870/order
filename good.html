@@ -3,160 +3,426 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股市交易紀錄與損益看板（雲端同步版）</title>
+    <title>股市交易紀錄與損益看板 (穩定同步版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
         body { font-family: 'Noto Sans TC', sans-serif; background-color: #f3f4f6; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
         .calendar-day { min-height: 110px; transition: all 0.2s; border-right: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7; }
         .calendar-day:hover { background-color: #f9fafb; cursor: pointer; }
         .custom-shadow { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.95); display: flex; align-items: center; justify-content: center; z-index: 100; flex-direction: column; }
     </style>
 </head>
-
-<body class="p-4 md:p-8">
-<div class="max-w-6xl mx-auto">
-
-<!-- 頂部 -->
-<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-    <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-blue-500">
-        <p class="text-sm text-gray-500">累積總損益</p>
-        <h2 id="total-profit" class="text-4xl font-bold">$0</h2>
+<body class="p-4 md:p-8 pb-20">
+    <!-- 載入動畫層 -->
+    <div id="loader" class="loading-overlay">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <p class="mt-4 text-gray-600 font-medium italic">正在連接雲端資料庫...</p>
+        <div id="sync-tip" class="mt-8 text-xs text-gray-400 max-w-xs text-center px-4">如果一直卡住，請確認網路。</div>
     </div>
-    <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-purple-500">
-        <p class="text-sm text-gray-500 mb-2">目前持有股票</p>
-        <div id="current-holdings-list"></div>
+
+    <div class="max-w-6xl mx-auto">
+        <!-- 頂部概況統計 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-blue-500 flex flex-col justify-center">
+                <p class="text-sm text-gray-500 font-medium">累積總損益 (已扣手續費/稅)</p>
+                <h2 id="total-profit" class="text-4xl font-bold mt-1 text-gray-800">$0</h2>
+            </div>
+            <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-purple-500 relative">
+                <p class="text-sm text-gray-500 font-medium mb-2">目前持有股票</p>
+                <div id="current-holdings-list" class="flex flex-wrap gap-2">
+                    <span class="text-gray-400 text-sm italic">尚無持股</span>
+                </div>
+                <!-- 同步管理按鈕 -->
+                <button onclick="openSyncModal()" class="absolute top-4 right-4 text-blue-500 hover:text-blue-700 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.803a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.1-1.1" /></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- 月曆控制項 -->
+        <div class="bg-white rounded-t-2xl p-4 flex justify-between items-center border-b">
+            <button onclick="changeMonth(-1)" class="p-2 hover:bg-gray-100 rounded-full transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <h3 id="current-month-display" class="text-xl font-bold text-gray-700">載入中...</h3>
+            <button onclick="changeMonth(1)" class="p-2 hover:bg-gray-100 rounded-full transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+            </button>
+        </div>
+
+        <!-- 月曆主體 -->
+        <div class="bg-white rounded-b-2xl custom-shadow overflow-hidden mb-8">
+            <div class="calendar-grid bg-gray-50 border-b">
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">日</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">一</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">二</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">三</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">四</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">五</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">六</div>
+            </div>
+            <div id="calendar-body" class="calendar-grid"></div>
+        </div>
+
+        <!-- 底部股票清單 -->
+        <div class="bg-white rounded-2xl custom-shadow p-6">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-gray-800">歷史交易明細表</h3>
+                <div class="text-[10px] text-gray-400">同步碼: <span id="sync-code-display" class="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600 italic">尚未設定</span></div>
+            </div>
+            <div id="stock-list-container" class="space-y-4">
+                <p class="text-gray-400 text-center py-4">目前尚無交易數據</p>
+            </div>
+        </div>
     </div>
-</div>
 
-<!-- 月曆 -->
-<div class="bg-white rounded-2xl custom-shadow overflow-hidden mb-8">
-    <div id="calendar-body" class="calendar-grid"></div>
-</div>
-
-<!-- 清單 -->
-<div class="bg-white rounded-2xl custom-shadow p-6">
-    <div class="flex justify-between mb-4">
-        <h3 class="text-xl font-bold">歷史交易明細表</h3>
-        <button onclick="clearAllData()" class="text-red-500 text-sm">清空所有資料</button>
+    <!-- 同步碼設定 Modal -->
+    <div id="sync-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-[60] p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl">
+            <h4 class="text-lg font-bold text-gray-800 mb-2">跨裝置同步管理</h4>
+            <p class="text-sm text-gray-500 mb-6">請輸入同步碼進行連線。</p>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 uppercase mb-1">同步碼</label>
+                    <input type="text" id="sync-input" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-mono font-bold tracking-widest outline-none">
+                </div>
+                <button onclick="saveSyncCode()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">確認並同步</button>
+                <button onclick="closeSyncModal()" class="w-full text-gray-400 text-sm py-2">取消</button>
+            </div>
+        </div>
     </div>
-    <div id="stock-list-container"></div>
-</div>
 
-</div>
-
-<!-- Modal -->
-<div id="modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center">
-    <div class="bg-white p-6 rounded-xl w-96">
-        <h4 id="modal-title" class="text-lg font-bold mb-4">新增交易</h4>
-        <form id="trade-form" class="space-y-3">
-            <input type="hidden" id="selected-date">
-
-            <input type="text" id="stock-name" placeholder="股票名稱" required class="w-full p-2 border rounded">
-
-            <select id="trade-type" class="w-full p-2 border rounded">
-                <option value="buy">買進</option>
-                <option value="sell">賣出</option>
-            </select>
-
-            <input type="number" id="trade-price" placeholder="價格" required class="w-full p-2 border rounded">
-            <input type="number" id="trade-amount" placeholder="股數" required class="w-full p-2 border rounded">
-
-            <button type="submit" class="w-full bg-black text-white p-2 rounded">儲存</button>
-        </form>
+    <!-- 交易 Modal -->
+    <div id="modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-6">
+                <h4 id="modal-title" class="text-lg font-bold text-gray-800">交易紀錄</h4>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+            <form id="trade-form" class="space-y-4">
+                <input type="hidden" id="selected-date">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600">股票名稱/代碼</label>
+                    <input type="text" id="stock-name" required class="mt-1 block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600">交易類型</label>
+                        <select id="trade-type" class="mt-1 block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3">
+                            <option value="buy">買進 (+)</option>
+                            <option value="sell">賣出 (-)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600">價格</label>
+                        <input type="number" step="0.01" id="trade-price" required class="mt-1 block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600">股數</label>
+                    <input type="number" id="trade-amount" required class="mt-1 block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3">
+                </div>
+                <button type="submit" id="submit-btn" class="w-full bg-slate-800 text-white font-bold py-4 rounded-xl mt-4 disabled:opacity-50">儲存紀錄</button>
+            </form>
+        </div>
     </div>
-</div>
 
-<!-- Firebase + 主程式 -->
-<script type="module">
+    <!-- 訊息提示 -->
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full text-sm font-medium shadow-xl hidden z-[100] transition-all duration-300"></div>
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, onSnapshot, addDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBzWK76cZTIKEoJGoc9bqi0M4sGLIMsUaE",
-  authDomain: "good-e9e4e.firebaseapp.com",
-  databaseURL: "https://good-e9e4e-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "good-e9e4e",
-  storageBucket: "good-e9e4e.firebasestorage.app",
-  messagingSenderId: "878748843198",
-  appId: "1:878748843198:web:6183a33453463ef8e2b2ef"
-};
+        const firebaseConfig = {
+            apiKey: "AIzaSyBzWK76cZTIKEoJGoc9bqi0M4sGLIMsUaE",
+            authDomain: "good-e9e4e.firebaseapp.com",
+            projectId: "good-e9e4e",
+            storageBucket: "good-e9e4e.firebasestorage.app",
+            messagingSenderId: "878748843198",
+            appId: "1:878748843198:web:6183a33453463ef8e2b2ef"
+        };
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-const tradesRef = ref(db, "stockTransactions");
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'stock-tracker-v3';
 
-let transactions = [];
+        let transactions = [];
+        let currentMonth = new Date();
+        let currentSyncId = localStorage.getItem('user_sync_code');
+        let unsubscribe = null;
+        let currentUser = null;
 
-// 🔥 即時同步監聽
-onValue(tradesRef, snapshot => {
-    const data = snapshot.val();
-    transactions = data ? Object.values(data) : [];
-    render();
-});
+        const showToast = (msg) => {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.classList.remove('hidden', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.classList.add('hidden'), 300);
+            }, 2500);
+        };
 
-function render(){
-    renderStats();
-    renderList();
-}
+        const init = async () => {
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    currentUser = user;
+                    if (!currentSyncId) {
+                        currentSyncId = user.uid.substring(0, 8);
+                        localStorage.setItem('user_sync_code', currentSyncId);
+                    }
+                    document.getElementById('sync-code-display').innerText = currentSyncId;
+                    startDataSubscription();
+                    document.getElementById('loader').classList.add('hidden');
+                } else {
+                    signInAnonymously(auth).catch(err => {
+                        console.error("Auth Error", err);
+                        document.getElementById('loader').classList.add('hidden');
+                        showToast("身份驗證失敗，請檢查網路");
+                    });
+                }
+            });
+        };
 
-function renderStats(){
-    let total = 0;
-    let inventory = {};
+        function startDataSubscription() {
+            if (unsubscribe) unsubscribe();
+            if (!currentSyncId) return;
 
-    transactions.forEach(t=>{
-        const amount = t.price * t.amount;
-        if(t.type==="buy"){
-            total -= amount;
-            inventory[t.name]=(inventory[t.name]||0)+t.amount;
-        }else{
-            total += amount;
-            inventory[t.name]=(inventory[t.name]||0)-t.amount;
+            const colRef = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
+            
+            unsubscribe = onSnapshot(colRef, (snapshot) => {
+                transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+                console.log("資料更新:", transactions); // 除錯檢查
+                updateUI();
+            }, (err) => {
+                console.error("Firestore Subscription Error:", err);
+                showToast("連線發生錯誤，請重新整理");
+            });
         }
-    });
 
-    document.getElementById("total-profit").innerText="$"+total.toLocaleString();
+        function calculateTransaction(type, price, amount) {
+            const rawTotal = price * amount;
+            let fee = Math.max(20, Math.floor(rawTotal * 0.001425));
+            return { total: type === 'buy' ? rawTotal + fee : rawTotal - fee - Math.floor(rawTotal * 0.003) };
+        }
 
-    const hold = Object.keys(inventory).filter(n=>inventory[n]>0);
-    document.getElementById("current-holdings-list").innerHTML=
-        hold.length===0 ? "尚無持股" :
-        hold.map(n=>`${n} (${inventory[n]}股)`).join("<br>");
-}
+        function updateUI() {
+            renderCalendar();
+            updateStats();
+            renderStockList();
+        }
 
-function renderList(){
-    const container=document.getElementById("stock-list-container");
-    if(transactions.length===0){
-        container.innerHTML="尚無資料";
-        return;
-    }
-    container.innerHTML=transactions.map(t=>
-        `<div class="border p-2 mb-2 rounded">
-            ${t.date} - ${t.name} - ${t.type==="buy"?"買":"賣"} 
-            ${t.price} x ${t.amount}
-        </div>`
-    ).join("");
-}
+        function renderCalendar() {
+            const calendarBody = document.getElementById('calendar-body');
+            const monthDisplay = document.getElementById('current-month-display');
+            if (!calendarBody || !monthDisplay) return;
 
-document.getElementById("trade-form").onsubmit=e=>{
-    e.preventDefault();
-    const newTrade={
-        date:new Date().toISOString().split("T")[0],
-        name:document.getElementById("stock-name").value,
-        type:document.getElementById("trade-type").value,
-        price:parseFloat(document.getElementById("trade-price").value),
-        amount:parseInt(document.getElementById("trade-amount").value)
-    };
-    push(tradesRef,newTrade);
-    document.getElementById("modal").classList.add("hidden");
-};
+            calendarBody.innerHTML = '';
+            const year = currentMonth.getFullYear();
+            const month = currentMonth.getMonth();
+            monthDisplay.innerText = `${year}年 ${month + 1}月`;
 
-window.clearAllData=()=>{
-    if(confirm("確定清空?")){
-        remove(tradesRef);
-    }
-};
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-</script>
+            for (let i = 0; i < firstDay; i++) {
+                const empty = document.createElement('div');
+                empty.className = 'calendar-day bg-gray-50/50';
+                calendarBody.appendChild(empty);
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const dayDiv = document.createElement('div');
+                dayDiv.className = 'calendar-day p-2 flex flex-col items-start hover:bg-blue-50/50 cursor-pointer overflow-hidden';
+                dayDiv.onclick = () => window.openModal(dateStr);
+
+                const label = document.createElement('span');
+                label.className = 'text-xs font-bold text-gray-400 mb-1';
+                label.innerText = day;
+                dayDiv.appendChild(label);
+
+                const dayTrans = transactions.filter(t => t.date === dateStr);
+                if (dayTrans.length > 0) {
+                    const flow = dayTrans.reduce((acc, t) => {
+                        const { total } = calculateTransaction(t.type, t.price, t.amount);
+                        return t.type === 'buy' ? acc - total : acc + total;
+                    }, 0);
+                    const flowDiv = document.createElement('div');
+                    flowDiv.className = `text-[10px] font-bold px-1 py-0.5 rounded w-full truncate mb-1 ${flow >= 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}`;
+                    flowDiv.innerText = (flow >= 0 ? '+' : '') + Math.round(flow).toLocaleString();
+                    dayDiv.appendChild(flowDiv);
+
+                    // 額外顯示當日交易名稱縮寫
+                    const names = [...new Set(dayTrans.map(t => t.name))].slice(0, 2);
+                    names.forEach(name => {
+                        const nameDiv = document.createElement('div');
+                        nameDiv.className = 'text-[9px] text-gray-400 truncate w-full';
+                        nameDiv.innerText = `• ${name}`;
+                        dayDiv.appendChild(nameDiv);
+                    });
+                }
+                calendarBody.appendChild(dayDiv);
+            }
+        }
+
+        function updateStats() {
+            let profit = 0;
+            let inv = {};
+            transactions.forEach(t => {
+                const { total } = calculateTransaction(t.type, t.price, t.amount);
+                const name = t.name.trim();
+                const amt = parseInt(t.amount);
+                
+                if (t.type === 'buy') { 
+                    profit -= total; 
+                    inv[name] = (inv[name] || 0) + amt; 
+                }
+                else { 
+                    profit += total; 
+                    inv[name] = (inv[name] || 0) - amt; 
+                }
+            });
+            const profitEl = document.getElementById('total-profit');
+            if (profitEl) profitEl.innerText = `$${Math.round(profit).toLocaleString()}`;
+            
+            const listEl = document.getElementById('current-holdings-list');
+            const stocks = Object.keys(inv).filter(k => inv[k] > 0);
+            if (listEl) {
+                listEl.innerHTML = stocks.length ? stocks.map(s => `
+                    <div class="bg-purple-50 border border-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm font-bold flex items-center">
+                        ${s} <span class="ml-1 text-[10px] opacity-60">${inv[s]}股</span>
+                    </div>
+                `).join('') : '<span class="text-gray-400 text-sm italic">尚無持股</span>';
+            }
+        }
+
+        function renderStockList() {
+            const container = document.getElementById('stock-list-container');
+            if (!container) return;
+            if (!transactions.length) {
+                container.innerHTML = '<p class="text-gray-400 text-center py-4">目前尚無交易數據</p>';
+                return;
+            }
+            const grouped = transactions.reduce((acc, t) => {
+                const name = t.name.trim();
+                acc[name] = acc[name] || [];
+                acc[name].push(t);
+                return acc;
+            }, {});
+
+            container.innerHTML = Object.keys(grouped).sort().map(name => `
+                <div class="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+                    <button class="w-full flex justify-between items-center p-5 text-left hover:bg-gray-50 transition" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                        <span class="font-bold text-gray-800">${name}</span>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-xs text-gray-400">${grouped[name].length} 筆紀錄</span>
+                            <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </div>
+                    </button>
+                    <div class="hidden p-4 border-t bg-gray-50/30">
+                        <table class="w-full text-xs">
+                            <thead class="text-gray-400 border-b border-gray-100">
+                                <tr>
+                                    <th class="text-left py-2 font-medium">日期</th>
+                                    <th class="text-left py-2 font-medium">類別</th>
+                                    <th class="text-right py-2 font-medium">單價/數量</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${grouped[name].map(t => `
+                                    <tr class="border-b border-gray-100/50 last:border-0">
+                                        <td class="py-3 text-gray-500 font-mono">${t.date}</td>
+                                        <td class="${t.type==='buy'?'text-blue-500':'text-red-500'} font-bold">${t.type==='buy'?'買入':'賣出'}</td>
+                                        <td class="text-right font-medium text-gray-700">$${t.price.toLocaleString()} / ${t.amount.toLocaleString()}股</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        window.changeMonth = (d) => { currentMonth.setMonth(currentMonth.getMonth() + d); renderCalendar(); };
+        window.openModal = (d) => { 
+            document.getElementById('selected-date').value = d;
+            document.getElementById('modal-title').innerText = `${d} 交易紀錄`;
+            document.getElementById('modal').classList.remove('hidden'); 
+            document.getElementById('stock-name').focus();
+        };
+        window.closeModal = () => { document.getElementById('modal').classList.add('hidden'); document.getElementById('trade-form').reset(); };
+        window.openSyncModal = () => { 
+            document.getElementById('sync-input').value = currentSyncId || "";
+            document.getElementById('sync-modal').classList.remove('hidden'); 
+        };
+        window.closeSyncModal = () => { document.getElementById('sync-modal').classList.add('hidden'); };
+        window.saveSyncCode = () => {
+            const val = document.getElementById('sync-input').value.trim();
+            if(!val) {
+                showToast("請輸入有效的同步碼");
+                return;
+            }
+            currentSyncId = val;
+            localStorage.setItem('user_sync_code', val);
+            document.getElementById('sync-code-display').innerText = val;
+            startDataSubscription();
+            closeSyncModal();
+            showToast("已連線至同步空間: " + val);
+        };
+
+        document.getElementById('trade-form').onsubmit = async (e) => {
+            e.preventDefault();
+            
+            if (!currentUser) {
+                showToast("雲端尚未就緒，請稍候");
+                return;
+            }
+            
+            if (!currentSyncId) {
+                showToast("請先設定同步碼");
+                return;
+            }
+
+            const btn = document.getElementById('submit-btn');
+            const originalText = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = "儲存中...";
+
+            try {
+                const colPath = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
+                
+                const payload = {
+                    date: document.getElementById('selected-date').value,
+                    name: document.getElementById('stock-name').value.trim(),
+                    type: document.getElementById('trade-type').value,
+                    price: parseFloat(document.getElementById('trade-price').value),
+                    amount: parseInt(document.getElementById('trade-amount').value),
+                    ts: Date.now(),
+                    createdAt: serverTimestamp()
+                };
+                
+                await addDoc(colPath, payload);
+                showToast("儲存成功！");
+                closeModal();
+            } catch (err) {
+                console.error("Save Error:", err);
+                showToast("儲存失敗: " + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = originalText;
+            }
+        };
+
+        init();
+    </script>
 </body>
 </html>
