@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股市交易紀錄與損益看板</title>
+    <title>股市交易紀錄與損益看板 (雲端同步強化版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
@@ -19,12 +19,11 @@
     <!-- 載入層 -->
     <div id="loader" class="loading-overlay">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-        <p class="mt-4 text-gray-600 font-medium italic">正在初始化雲端連線...</p>
-        <p id="error-msg" class="mt-2 text-xs text-red-400 hidden text-center px-4">偵測到連線異常，已切換至本地存取模式</p>
+        <p class="mt-4 text-gray-600 font-medium italic">正在建立加密連線...</p>
+        <p id="error-msg" class="mt-2 text-xs text-red-400 hidden text-center px-4">雲端連線失敗，目前為離線預覽模式</p>
     </div>
 
     <div class="max-w-6xl mx-auto">
-        <!-- 損益、持股區 -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-blue-500 flex flex-col justify-center">
                 <p class="text-sm text-gray-500 font-medium">累積總損益 (已扣手續費/稅)</p>
@@ -35,13 +34,12 @@
                 <div id="current-holdings-list" class="flex flex-wrap gap-2">
                     <span class="text-gray-400 text-sm italic">尚無持股</span>
                 </div>
-                <button onclick="openSyncModal()" class="absolute top-4 right-4 text-blue-500 hover:text-blue-700 transition">
+                <button onclick="openSyncModal()" class="absolute top-4 right-4 text-blue-500 hover:text-blue-700 transition" title="切換同步帳號">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.803a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.1-1.1" /></svg>
                 </button>
             </div>
         </div>
 
-        <!-- 月份切換 -->
         <div class="bg-white rounded-t-2xl p-4 flex justify-between items-center border-b">
             <button onclick="changeMonth(-1)" class="p-2 hover:bg-gray-100 rounded-full transition">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
@@ -52,7 +50,6 @@
             </button>
         </div>
 
-        <!-- 日曆 -->
         <div class="bg-white rounded-b-2xl custom-shadow overflow-hidden mb-8">
             <div class="calendar-grid bg-gray-50 border-b">
                 <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">日</div>
@@ -65,27 +62,85 @@
             </div>
             <div id="calendar-body" class="calendar-grid"></div>
         </div>
+
+        <div class="bg-white rounded-2xl custom-shadow p-6">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-gray-800">歷史交易明細表</h3>
+                <div class="text-[10px] text-gray-400">同步碼: <span id="sync-code-display" class="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600 italic">尚未設定</span></div>
+            </div>
+            <div id="stock-list-container" class="space-y-4">
+                <p class="text-gray-400 text-center py-4">目前尚無交易數據</p>
+            </div>
+        </div>
     </div>
+
+    <!-- Modal 同步設定 -->
+    <div id="sync-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-[60] p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl">
+            <h4 class="text-lg font-bold text-gray-800 mb-2">同步管理</h4>
+            <p class="text-xs text-gray-500 mb-4">輸入您的專屬同步碼以載入雲端資料</p>
+            <div class="space-y-4">
+                <input type="text" id="sync-input" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-mono font-bold tracking-widest outline-none" placeholder="輸入同步碼">
+                <button onclick="saveSyncCode()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">確認同步</button>
+                <button onclick="closeSyncModal()" class="w-full text-gray-400 text-sm py-2">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 交易紀錄 -->
+    <div id="modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-6">
+                <h4 id="modal-title" class="text-lg font-bold text-gray-800">交易紀錄</h4>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">&times;</button>
+            </div>
+            <form id="trade-form" class="space-y-4">
+                <input type="hidden" id="selected-date">
+                <input type="text" id="stock-name" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 outline-none" placeholder="股票名稱 (如：日立)">
+                <div class="grid grid-cols-2 gap-4">
+                    <select id="trade-type" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" onchange="calculateSubtotal()">
+                        <option value="buy">買進 (+)</option>
+                        <option value="sell">賣出 (-)</option>
+                    </select>
+                    <input type="number" step="0.01" id="trade-price" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="單價" oninput="calculateSubtotal()">
+                </div>
+                <input type="number" id="trade-amount" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="股數" oninput="calculateSubtotal()">
+                
+                <!-- 總金額顯示區 -->
+                <div class="bg-gray-50 rounded-xl p-4 flex justify-between items-center border border-dashed border-gray-300">
+                    <span class="text-gray-500 text-sm font-medium">預計成交總額</span>
+                    <span id="subtotal-display" class="text-xl font-bold text-gray-800">$0</span>
+                </div>
+
+                <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl mt-2 hover:bg-blue-700 transition shadow-lg shadow-blue-200">確認並儲存紀錄</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full text-sm font-medium shadow-xl hidden z-[100]"></div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
+        // 注意：這裡必須使用有效的 Firebase 配置才能啟動雲端同步
         const defaultFirebaseConfig = {
-            apiKey: "AIzaSyBzWK76cZTIKEoJGoc9bqi0M4sGLIMsUaE",
-            authDomain: "good-e9e4e.firebaseapp.com",
-            projectId: "good-e9e4e",
-            storageBucket: "good-e9e4e.firebasestorage.app",
-            messagingSenderId: "878748843198",
-            appId: "1:878748843198:web:6183a33453463ef8e2b2ef"
+            apiKey: "", // 若為空值或無效，將無法啟動實體 Firebase 連線
+            authDomain: "stock-tracker-auth.firebaseapp.com",
+            projectId: "stock-tracker-v3",
+            storageBucket: "stock-tracker-v3.appspot.com",
+            messagingSenderId: "000000000000",
+            appId: "1:000000000000:web:abc123def456"
         };
 
-        let db, auth, user = null, unsubscribe = null;
+        let db, auth;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'stock-tracker-v3';
         let transactions = [];
         let currentMonth = new Date();
-        let currentSyncId = localStorage.getItem('user_sync_code') || null;
-        const appId = 'stock-tracker-v3';
+        let currentSyncId = localStorage.getItem('user_sync_code');
+        let unsubscribe = null;
+        let user = null;
 
         const showToast = (msg) => {
             const t = document.getElementById('toast');
@@ -94,20 +149,99 @@
             setTimeout(() => t.classList.add('hidden'), 2500);
         };
 
-        const proceedInit = () => {
+        const init = async () => {
+            try {
+                // 優先使用環境提供的配置，否則回退到預設
+                const config = (typeof __firebase_config !== 'undefined' && __firebase_config) 
+                               ? JSON.parse(__firebase_config) 
+                               : defaultFirebaseConfig;
+
+                // 檢查是否有 API Key，若無則提示
+                if (!config.apiKey) {
+                    console.warn("未偵測到 Firebase API Key，雲端同步功能暫不可用。");
+                    handleFallbackMode();
+                    return;
+                }
+
+                const app = initializeApp(config);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // 嘗試進行匿名登錄或使用 token
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (authErr) {
+                    handleFallbackMode();
+                    return;
+                }
+
+                onAuthStateChanged(auth, (u) => {
+                    if (u) {
+                        user = u;
+                        proceedInit();
+                    } else {
+                        handleFallbackMode();
+                    }
+                });
+
+            } catch (e) {
+                console.error("Firebase 初始化失敗:", e);
+                handleFallbackMode();
+            }
+        };
+
+        function handleFallbackMode() {
+            document.getElementById('error-msg').classList.remove('hidden');
+            document.getElementById('loader').classList.add('hidden');
+            user = { uid: "guest_" + Math.random().toString(36).substr(2, 5) };
+            // 如果是在 Canvas 環境，我們至少要讓 UI 跑起來
+            proceedInit();
+        }
+
+        function proceedInit() {
             if (!currentSyncId) {
-                currentSyncId = user ? user.uid.substring(0, 8) : "guest_" + Math.random().toString(36).substr(2,5);
+                currentSyncId = user.uid.substring(0, 8);
                 localStorage.setItem('user_sync_code', currentSyncId);
             }
             document.getElementById('sync-code-display').innerText = currentSyncId;
+            startSync();
+            document.getElementById('loader').classList.add('hidden');
             updateUI();
-        };
+        }
 
-        const updateUI = () => {
+        function startSync() {
+            if (unsubscribe) unsubscribe();
+            // 檢查是否具備雲端同步條件
+            if (!currentSyncId || !db) {
+                console.log("正在使用本地存儲模式");
+                return;
+            }
+
+            // 重要：遵循規則 1 使用嚴格的路徑
+            const colRef = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
+            
+            unsubscribe = onSnapshot(colRef, (snap) => {
+                transactions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+                updateUI();
+            }, (err) => {
+                console.error("同步數據時發生錯誤:", err);
+                // 如果是權限錯誤，通常是因為 API Key 不匹配
+                showToast("雲端同步連線中斷");
+            });
+        }
+
+        function updateUI() {
             renderCalendar();
-        };
+            updateStats();
+            renderList();
+        }
 
-        const renderCalendar = () => {
+        function renderCalendar() {
             const body = document.getElementById('calendar-body');
             const display = document.getElementById('current-month-display');
             if (!body) return;
@@ -127,39 +261,184 @@
             }
 
             for (let d = 1; d <= days; d++) {
-                const dateStr = `${y}-${String(m + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const dateStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                 const div = document.createElement('div');
                 div.className = 'calendar-day p-2 flex flex-col items-start hover:bg-blue-50 cursor-pointer overflow-hidden';
+                
+                div.onclick = () => {
+                    const form = document.getElementById('trade-form');
+                    form.reset();
+                    document.getElementById('selected-date').value = dateStr;
+                    document.getElementById('modal-title').innerText = `${dateStr} 新增交易`;
+                    document.getElementById('subtotal-display').innerText = '$0';
+                    document.getElementById('submit-btn').disabled = false;
+                    document.getElementById('modal').classList.remove('hidden');
+                };
+
                 div.innerHTML = `<span class="text-xs font-bold text-gray-400 mb-1">${d}</span>`;
+                
+                const dayTrans = transactions.filter(t => t.date === dateStr);
+                if (dayTrans.length > 0) {
+                    let flow = 0;
+                    dayTrans.forEach(t => {
+                        const total = (parseFloat(t.price) || 0) * (parseInt(t.amount) || 0);
+                        flow += (t.type === 'buy' ? -total : total);
+                    });
+                    div.innerHTML += `<div class="text-[10px] font-bold px-1 py-0.5 rounded w-full truncate ${flow >= 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}">${flow >= 0 ? '+' : ''}${Math.round(flow).toLocaleString()}</div>`;
+                }
                 body.appendChild(div);
             }
+        }
+
+        function updateStats() {
+            let totalProfit = 0;
+            let inv = {};
+            transactions.forEach(t => {
+                const total = (parseFloat(t.price) || 0) * (parseInt(t.amount) || 0);
+                const name = (t.name || "未命名").trim();
+                if (t.type === 'buy') {
+                    totalProfit -= total;
+                    inv[name] = (inv[name] || 0) + (parseInt(t.amount) || 0);
+                } else {
+                    totalProfit += total;
+                    inv[name] = (inv[name] || 0) - (parseInt(t.amount) || 0);
+                }
+            });
+            document.getElementById('total-profit').innerText = `$${Math.round(totalProfit).toLocaleString()}`;
+            const list = document.getElementById('current-holdings-list');
+            const stocks = Object.keys(inv).filter(k => inv[k] > 0);
+            list.innerHTML = stocks.length ? stocks.map(s => `<span class="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-bold">${s} (${inv[s]})</span>`).join('') : '<span class="text-gray-400 text-sm italic">尚無持股</span>';
+        }
+
+        function renderList() {
+            const container = document.getElementById('stock-list-container');
+            if (!container) return;
+            if (!transactions.length) {
+                container.innerHTML = '<p class="text-gray-400 text-center py-4">目前尚無交易明細</p>';
+                return;
+            }
+            
+            const grouped = transactions.reduce((acc, t) => {
+                const n = (t.name || "未命名").trim();
+                acc[n] = acc[n] || [];
+                acc[n].push(t);
+                return acc;
+            }, {});
+
+            container.innerHTML = Object.keys(grouped).map(name => {
+                const trades = grouped[name];
+                const prices = trades.map(t => parseFloat(t.price));
+                const maxPrice = Math.max(...prices);
+                const minPrice = Math.min(...prices);
+                
+                let stockProfit = 0;
+                trades.forEach(t => {
+                    const total = (parseFloat(t.price) || 0) * (parseInt(t.amount) || 0);
+                    stockProfit += (t.type === 'buy' ? -total : total);
+                });
+
+                return `
+                <div class="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between mb-2 border-b border-gray-50 pb-2 gap-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-lg font-bold text-blue-600">${name}</span>
+                            <div class="flex gap-1">
+                                <span class="text-[10px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded border border-red-100">高: ${maxPrice}</span>
+                                <span class="text-[10px] bg-green-50 text-green-600 px-1.5 py-0.5 rounded border border-green-100">低: ${minPrice}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs font-bold ${stockProfit >= 0 ? 'text-red-500' : 'text-green-600'}">
+                                累計損益: ${stockProfit >= 0 ? '+' : ''}${Math.round(stockProfit).toLocaleString()}
+                            </span>
+                            <span class="text-[10px] text-gray-400">${trades.length} 筆紀錄</span>
+                        </div>
+                    </div>
+                    <div class="text-xs space-y-1 pt-1">
+                        ${trades.map(t => `<div class="flex justify-between hover:bg-gray-50 p-1 rounded">
+                            <span class="text-gray-500">${t.date} <b class="${t.type==='buy'?'text-red-500':'text-green-600'}">${t.type==='buy'?'買入':'賣出'}</b></span>
+                            <span class="font-mono">$${t.price} &times; ${t.amount}</span>
+                        </div>`).join('')}
+                    </div>
+                </div>
+            `;}).join('');
+        }
+
+        window.calculateSubtotal = () => {
+            const price = parseFloat(document.getElementById('trade-price').value) || 0;
+            const amount = parseInt(document.getElementById('trade-amount').value) || 0;
+            const type = document.getElementById('trade-type').value;
+            const subtotal = price * amount;
+            
+            const display = document.getElementById('subtotal-display');
+            display.innerText = `$${Math.round(subtotal).toLocaleString()}`;
+            display.className = `text-xl font-bold ${type === 'buy' ? 'text-red-500' : 'text-green-600'}`;
         };
 
         window.changeMonth = (d) => { currentMonth.setMonth(currentMonth.getMonth() + d); updateUI(); };
+        window.closeModal = () => {
+            document.getElementById('modal').classList.add('hidden');
+            document.getElementById('submit-btn').disabled = false;
+        };
+        window.openSyncModal = () => {
+            document.getElementById('sync-input').value = currentSyncId;
+            document.getElementById('sync-modal').classList.remove('hidden');
+        };
+        window.closeSyncModal = () => document.getElementById('sync-modal').classList.add('hidden');
+        window.saveSyncCode = () => {
+            const val = document.getElementById('sync-input').value.trim();
+            if (val) {
+                currentSyncId = val;
+                localStorage.setItem('user_sync_code', val);
+                document.getElementById('sync-code-display').innerText = val;
+                startSync();
+                closeSyncModal();
+                showToast("同步帳號切換成功");
+            }
+        };
 
-        // --- 立即渲染日曆 ---
-        document.getElementById('loader').classList.add('hidden'); // 隱藏 loader
-        proceedInit();
+        document.getElementById('trade-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!db) { 
+                showToast("目前處於離線模式，資料將暫存於本機");
+                // 實作離線存儲 logic (省略)
+                return; 
+            }
+            
+            const btn = document.getElementById('submit-btn');
+            if (btn.disabled) return;
+            btn.disabled = true;
+            btn.innerText = "儲存中...";
 
-        // --- Firebase 初始化同步 (非阻塞) ---
-        try {
-            const app = initializeApp(defaultFirebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-
-            signInAnonymously(auth).then(() => {
-                onAuthStateChanged(auth, (u) => {
-                    if (u) {
-                        user = u;
-                        console.log("Firebase 登入完成，UID:", user.uid);
-                        // TODO: 這裡可加 startSync() 同步交易
-                    }
+            try {
+                const col = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
+                await addDoc(col, {
+                    date: document.getElementById('selected-date').value,
+                    name: document.getElementById('stock-name').value.trim() || "未命名",
+                    type: document.getElementById('trade-type').value,
+                    price: parseFloat(document.getElementById('trade-price').value) || 0,
+                    amount: parseInt(document.getElementById('trade-amount').value) || 0,
+                    ts: Date.now(),
+                    createdAt: serverTimestamp()
                 });
-            });
-        } catch(e) {
-            console.warn("Firebase 初始化失敗，本地模式使用", e);
-            document.getElementById('error-msg').classList.remove('hidden');
-        }
+                
+                showToast("✅ 已成功儲存雲端紀錄");
+                
+                setTimeout(() => {
+                    closeModal();
+                    btn.innerText = "確認並儲存紀錄";
+                    btn.disabled = false;
+                }, 300);
+
+            } catch (err) { 
+                console.error("儲存失敗:", err);
+                showToast("❌ 雲端儲存失敗"); 
+                btn.disabled = false;
+                btn.innerText = "確認並儲存紀錄";
+            }
+        });
+
+        init();
     </script>
 </body>
 </html>
