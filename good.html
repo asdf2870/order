@@ -194,10 +194,13 @@ const defaultFirebaseConfig = {
                     }
                 });
 
-            } catch (e) {
-                console.error("Firebase 初始化失敗:", e);
-                handleFallbackMode();
-            }
+// 修改這一段來抓出真因
+} catch (e) {
+    console.error("Firebase 初始化失敗，錯誤代碼:", e.code);
+    console.error("詳細訊息:", e.message); // 這行會告訴你到底哪裡錯了
+    handleFallbackMode();
+}
+        
         };
 
         function handleFallbackMode() {
