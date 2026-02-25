@@ -225,7 +225,7 @@ const defaultFirebaseConfig = {
             if (unsubscribe) unsubscribe();
             if (!currentSyncId || !db) return;
 
-            const colRef = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
+          const colRef = collection(db, `sync_${currentSyncId}`);
             unsubscribe = onSnapshot(colRef, (snap) => {
                 transactions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                     .sort((a, b) => (b.ts || 0) - (a.ts || 0));
