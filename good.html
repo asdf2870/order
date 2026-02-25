@@ -239,15 +239,12 @@
                 div.className = 'calendar-day p-2 flex flex-col items-start hover:bg-blue-50 cursor-pointer overflow-hidden';
                 
                 div.onclick = () => {
-                    // 打開 Modal 前強制重置
                     const form = document.getElementById('trade-form');
                     form.reset();
-                    
                     document.getElementById('selected-date').value = dateStr;
                     document.getElementById('modal-title').innerText = `${dateStr} 新增交易`;
                     document.getElementById('subtotal-display').innerText = '$0';
                     document.getElementById('submit-btn').disabled = false;
-                    
                     document.getElementById('modal').classList.remove('hidden');
                 };
 
@@ -293,6 +290,8 @@
                 container.innerHTML = '<p class="text-gray-400 text-center py-4">目前尚無交易明細</p>';
                 return;
             }
+            
+            // 按照股票名稱分組
             const grouped = transactions.reduce((acc, t) => {
                 const n = (t.name || "未命名").trim();
                 acc[n] = acc[n] || [];
@@ -300,20 +299,46 @@
                 return acc;
             }, {});
 
-            container.innerHTML = Object.keys(grouped).map(name => `
+            container.innerHTML = Object.keys(grouped).map(name => {
+                const trades = grouped[name];
+                
+                // 計算最高、最低股價
+                const prices = trades.map(t => parseFloat(t.price));
+                const maxPrice = Math.max(...prices);
+                const minPrice = Math.min(...prices);
+                
+                // 計算各股損益
+                let stockProfit = 0;
+                trades.forEach(t => {
+                    const total = (parseFloat(t.price) || 0) * (parseInt(t.amount) || 0);
+                    stockProfit += (t.type === 'buy' ? -total : total);
+                });
+
+                return `
                 <div class="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
-                    <div class="flex justify-between font-bold mb-2 border-b border-gray-50 pb-2">
-                        <span class="text-blue-600">${name}</span>
-                        <span class="text-xs text-gray-400">${grouped[name].length} 筆紀錄</span>
+                    <div class="flex flex-col md:flex-row md:items-center justify-between mb-2 border-b border-gray-50 pb-2 gap-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-lg font-bold text-blue-600">${name}</span>
+                            <div class="flex gap-1">
+                                <span class="text-[10px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded border border-red-100">高: ${maxPrice}</span>
+                                <span class="text-[10px] bg-green-50 text-green-600 px-1.5 py-0.5 rounded border border-green-100">低: ${minPrice}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs font-bold ${stockProfit >= 0 ? 'text-red-500' : 'text-green-600'}">
+                                累計損益: ${stockProfit >= 0 ? '+' : ''}${Math.round(stockProfit).toLocaleString()}
+                            </span>
+                            <span class="text-[10px] text-gray-400">${trades.length} 筆紀錄</span>
+                        </div>
                     </div>
                     <div class="text-xs space-y-1 pt-1">
-                        ${grouped[name].map(t => `<div class="flex justify-between hover:bg-gray-50 p-1 rounded">
+                        ${trades.map(t => `<div class="flex justify-between hover:bg-gray-50 p-1 rounded">
                             <span class="text-gray-500">${t.date} <b class="${t.type==='buy'?'text-red-500':'text-green-600'}">${t.type==='buy'?'買入':'賣出'}</b></span>
                             <span class="font-mono">$${t.price} &times; ${t.amount}</span>
                         </div>`).join('')}
                     </div>
                 </div>
-            `).join('');
+            `;}).join('');
         }
 
         window.calculateSubtotal = () => {
@@ -372,7 +397,6 @@
                 
                 showToast("✅ 已成功儲存交易");
                 
-                // 強制關閉並重置 UI
                 setTimeout(() => {
                     closeModal();
                     btn.innerText = "確認並儲存紀錄";
