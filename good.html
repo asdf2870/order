@@ -158,41 +158,43 @@ const defaultFirebaseConfig = {
             setTimeout(() => t.classList.add('hidden'), 2500);
         };
 
-        const init = async () => {
-            try {
-                const config = (typeof __firebase_config !== 'undefined' && __firebase_config) 
-                               ? JSON.parse(__firebase_config) 
-                               : defaultFirebaseConfig;
+      const init = async () => {
+    try {
+        const config = (typeof __firebase_config !== 'undefined' && __firebase_config) 
+                       ? JSON.parse(__firebase_config) 
+                       : defaultFirebaseConfig;
 
-                if (!config.apiKey) {
-                    console.warn("未偵測到 Firebase API Key，雲端同步功能暫不可用。");
-                    handleFallbackMode();
-                    return;
-                }
+        const app = initializeApp(config);
+        db = getFirestore(app);
+        auth = getAuth(app);
 
-                const app = initializeApp(config);
-                db = getFirestore(app);
-                auth = getAuth(app);
+        // 這裡加入詳細的 Catch
+        try {
+            await signInAnonymously(auth);
+            console.log("✅ Firebase 認證成功");
+        } catch (authErr) {
+            console.error("❌ Firebase 認證失敗:", authErr.code, authErr.message);
+            if(authErr.code === 'auth/operation-not-allowed') {
+                alert("請到 Firebase 後台開啟『匿名登入』功能！");
+            }
+            handleFallbackMode();
+            return;
+        }
 
-                try {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                } catch (authErr) {
-                    handleFallbackMode();
-                    return;
-                }
+        onAuthStateChanged(auth, (u) => {
+            if (u) {
+                user = u;
+                proceedInit();
+            } else {
+                handleFallbackMode();
+            }
+        });
 
-                onAuthStateChanged(auth, (u) => {
-                    if (u) {
-                        user = u;
-                        proceedInit();
-                    } else {
-                        handleFallbackMode();
-                    }
-                });
+    } catch (e) {
+        console.error("❌ Firebase 初始化全面失敗:", e);
+        handleFallbackMode();
+    }
+};
 
 // 修改這一段來抓出真因
 } catch (e) {
