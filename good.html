@@ -127,15 +127,18 @@
                     <label class="block text-sm font-medium text-gray-600">股數</label>
                     <input type="number" id="trade-amount" required class="mt-1 block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3">
                 </div>
-                <button type="submit" id="submit-btn" class="w-full bg-slate-800 text-white font-bold py-4 rounded-xl mt-4 disabled:opacity-50">儲存</button>
+                <button type="submit" id="submit-btn" class="w-full bg-slate-800 text-white font-bold py-4 rounded-xl mt-4 disabled:opacity-50">儲存紀錄</button>
             </form>
         </div>
     </div>
 
+    <!-- 訊息提示 -->
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full text-sm font-medium shadow-xl hidden z-[100] transition-all duration-300"></div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBzWK76cZTIKEoJGoc9bqi0M4sGLIMsUaE",
@@ -155,35 +158,53 @@
         let currentMonth = new Date();
         let currentSyncId = localStorage.getItem('user_sync_code');
         let unsubscribe = null;
+        let currentUser = null;
+
+        const showToast = (msg) => {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.classList.remove('hidden', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.classList.add('hidden'), 300);
+            }, 2500);
+        };
 
         const init = async () => {
-            try {
-                const userCredential = await signInAnonymously(auth);
-                const uid = userCredential.user.uid;
-                if (!currentSyncId) {
-                    currentSyncId = uid.substring(0, 8);
-                    localStorage.setItem('user_sync_code', currentSyncId);
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    currentUser = user;
+                    // 如果沒有設定過同步碼，預設用 uid 前八碼
+                    if (!currentSyncId) {
+                        currentSyncId = user.uid.substring(0, 8);
+                        localStorage.setItem('user_sync_code', currentSyncId);
+                    }
+                    document.getElementById('sync-code-display').innerText = currentSyncId;
+                    startDataSubscription();
+                    document.getElementById('loader').classList.add('hidden');
+                } else {
+                    signInAnonymously(auth).catch(err => {
+                        console.error("Auth Error", err);
+                        document.getElementById('loader').classList.add('hidden');
+                        showToast("身份驗證失敗，請檢查網路");
+                    });
                 }
-                document.getElementById('sync-code-display').innerText = currentSyncId;
-                startDataSubscription();
-                document.getElementById('loader').classList.add('hidden');
-            } catch (err) {
-                console.error(err);
-                document.getElementById('loader').classList.add('hidden');
-                // 即使連線失敗也渲染初始日曆
-                updateUI();
-            }
+            });
         };
 
         function startDataSubscription() {
             if (unsubscribe) unsubscribe();
-            const path = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
-            unsubscribe = onSnapshot(path, (snapshot) => {
-                transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            if (!currentSyncId) return;
+
+            const colRef = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
+            
+            unsubscribe = onSnapshot(colRef, (snapshot) => {
+                transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
                 updateUI();
             }, (err) => {
-                console.error("Firestore Error:", err);
-                updateUI();
+                console.error("Firestore Subscription Error:", err);
+                showToast("連線發生錯誤，請重新整理");
             });
         }
 
@@ -280,15 +301,15 @@
                 <div class="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
                     <button class="w-full flex justify-between items-center p-5 text-left" onclick="this.nextElementSibling.classList.toggle('hidden')">
                         <span class="font-bold text-gray-800">${name}</span>
-                        <span class="text-xs text-gray-400">${grouped[name].length} 筆</span>
+                        <span class="text-xs text-gray-400">${grouped[name].length} 筆紀錄</span>
                     </button>
                     <div class="hidden p-4 border-t bg-gray-50/30">
                         <table class="w-full text-xs">
-                            ${grouped[name].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t => `
-                                <tr class="border-b border-gray-50">
-                                    <td class="py-2">${t.date}</td>
+                            ${grouped[name].map(t => `
+                                <tr class="border-b border-gray-100/50">
+                                    <td class="py-2 text-gray-500">${t.date}</td>
                                     <td class="${t.type==='buy'?'text-blue-500':'text-red-500'} font-bold">${t.type==='buy'?'買入':'賣出'}</td>
-                                    <td class="text-right">$${t.price} / ${t.amount}股</td>
+                                    <td class="text-right font-medium text-gray-700">$${t.price} / ${t.amount}股</td>
                                 </tr>
                             `).join('')}
                         </table>
@@ -302,42 +323,76 @@
             document.getElementById('selected-date').value = d;
             document.getElementById('modal-title').innerText = `${d} 交易紀錄`;
             document.getElementById('modal').classList.remove('hidden'); 
+            document.getElementById('stock-name').focus();
         };
         window.closeModal = () => { document.getElementById('modal').classList.add('hidden'); document.getElementById('trade-form').reset(); };
         window.openSyncModal = () => { 
-            document.getElementById('sync-input').value = currentSyncId;
+            document.getElementById('sync-input').value = currentSyncId || "";
             document.getElementById('sync-modal').classList.remove('hidden'); 
         };
         window.closeSyncModal = () => { document.getElementById('sync-modal').classList.add('hidden'); };
         window.saveSyncCode = () => {
             const val = document.getElementById('sync-input').value.trim();
-            if(!val) return;
+            if(!val) {
+                showToast("請輸入有效的同步碼");
+                return;
+            }
             currentSyncId = val;
             localStorage.setItem('user_sync_code', val);
             document.getElementById('sync-code-display').innerText = val;
             startDataSubscription();
             closeSyncModal();
+            showToast("同步代碼已更新");
         };
 
         document.getElementById('trade-form').onsubmit = async (e) => {
             e.preventDefault();
+            
+            // 基礎檢查：確認是否已連線
+            if (!currentUser) {
+                showToast("雲端連線中，請稍候再試");
+                return;
+            }
+            
+            if (!currentSyncId) {
+                showToast("請先設定同步碼");
+                return;
+            }
+
             const btn = document.getElementById('submit-btn');
+            const originalText = btn.innerText;
             btn.disabled = true;
+            btn.innerText = "正在儲存...";
+
             try {
-                const path = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
-                await addDoc(path, {
+                // 明確指定路徑，符合 RULE 1
+                const colPath = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
+                
+                const payload = {
                     date: document.getElementById('selected-date').value,
                     name: document.getElementById('stock-name').value.trim(),
                     type: document.getElementById('trade-type').value,
                     price: parseFloat(document.getElementById('trade-price').value),
                     amount: parseInt(document.getElementById('trade-amount').value),
-                    ts: Date.now()
-                });
+                    ts: Date.now(),
+                    createdAt: serverTimestamp()
+                };
+                
+                // 執行儲存
+                await addDoc(colPath, payload);
+                
+                showToast("交易儲存成功！");
                 closeModal();
-            } catch (err) { alert("儲存失敗"); }
-            finally { btn.disabled = false; }
+            } catch (err) {
+                console.error("Save Error:", err);
+                showToast("儲存失敗: " + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = originalText;
+            }
         };
 
+        // 啟動程式
         init();
     </script>
 </body>
