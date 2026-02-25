@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股市交易紀錄與損益看板 (重複輸入優化版)</title>
+    <title>股市交易紀錄與損益看板 (雲端同步強化版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
@@ -19,8 +19,8 @@
     <!-- 載入層 -->
     <div id="loader" class="loading-overlay">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-        <p class="mt-4 text-gray-600 font-medium italic">正在初始化雲端連線...</p>
-        <p id="error-msg" class="mt-2 text-xs text-red-400 hidden text-center px-4">偵測到連線異常，已切換至本地存取模式</p>
+        <p class="mt-4 text-gray-600 font-medium italic">正在建立加密連線...</p>
+        <p id="error-msg" class="mt-2 text-xs text-red-400 hidden text-center px-4">雲端連線失敗，目前為離線預覽模式</p>
     </div>
 
     <div class="max-w-6xl mx-auto">
@@ -34,7 +34,7 @@
                 <div id="current-holdings-list" class="flex flex-wrap gap-2">
                     <span class="text-gray-400 text-sm italic">尚無持股</span>
                 </div>
-                <button onclick="openSyncModal()" class="absolute top-4 right-4 text-blue-500 hover:text-blue-700 transition">
+                <button onclick="openSyncModal()" class="absolute top-4 right-4 text-blue-500 hover:text-blue-700 transition" title="切換同步帳號">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.803a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.1-1.1" /></svg>
                 </button>
             </div>
@@ -78,6 +78,7 @@
     <div id="sync-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-[60] p-4">
         <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl">
             <h4 class="text-lg font-bold text-gray-800 mb-2">同步管理</h4>
+            <p class="text-xs text-gray-500 mb-4">輸入您的專屬同步碼以載入雲端資料</p>
             <div class="space-y-4">
                 <input type="text" id="sync-input" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-mono font-bold tracking-widest outline-none" placeholder="輸入同步碼">
                 <button onclick="saveSyncCode()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">確認同步</button>
@@ -106,9 +107,15 @@
                 <input type="number" id="trade-amount" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="股數" oninput="calculateSubtotal()">
                 
                 <!-- 總金額顯示區 -->
-                <div class="bg-gray-50 rounded-xl p-4 flex justify-between items-center border border-dashed border-gray-300">
-                    <span class="text-gray-500 text-sm font-medium">預計成交總額</span>
-                    <span id="subtotal-display" class="text-xl font-bold text-gray-800">$0</span>
+                <div class="bg-gray-50 rounded-xl p-4 space-y-2 border border-dashed border-gray-300">
+                    <div class="flex justify-between items-center text-xs text-gray-500">
+                        <span>成交額: <span id="raw-subtotal">$0</span></span>
+                        <span>手續費: <span id="fee-display">$0</span></span>
+                    </div>
+                    <div class="flex justify-between items-center border-t border-gray-200 pt-2">
+                        <span class="text-gray-500 text-sm font-medium">預計結算總額</span>
+                        <span id="subtotal-display" class="text-xl font-bold text-gray-800">$0</span>
+                    </div>
                 </div>
 
                 <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl mt-2 hover:bg-blue-700 transition shadow-lg shadow-blue-200">確認並儲存紀錄</button>
@@ -123,13 +130,14 @@
         import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
+        // 注意：這裡必須使用有效的 Firebase 配置才能啟動雲端同步
         const defaultFirebaseConfig = {
-            apiKey: "AIzaSyBzWK76cZTIKEoJGoc9bqi0M4sGLIMsUaE",
-            authDomain: "good-e9e4e.firebaseapp.com",
-            projectId: "good-e9e4e",
-            storageBucket: "good-e9e4e.firebasestorage.app",
-            messagingSenderId: "878748843198",
-            appId: "1:878748843198:web:6183a33453463ef8e2b2ef"
+            apiKey: "", 
+            authDomain: "stock-tracker-auth.firebaseapp.com",
+            projectId: "stock-tracker-v3",
+            storageBucket: "stock-tracker-v3.appspot.com",
+            messagingSenderId: "000000000000",
+            appId: "1:000000000000:web:abc123def456"
         };
 
         let db, auth;
@@ -149,12 +157,20 @@
 
         const init = async () => {
             try {
-                const config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : defaultFirebaseConfig;
+                const config = (typeof __firebase_config !== 'undefined' && __firebase_config) 
+                               ? JSON.parse(__firebase_config) 
+                               : defaultFirebaseConfig;
+
+                if (!config.apiKey) {
+                    console.warn("未偵測到 Firebase API Key，雲端同步功能暫不可用。");
+                    handleFallbackMode();
+                    return;
+                }
+
                 const app = initializeApp(config);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Auth
                 try {
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                         await signInWithCustomToken(auth, __initial_auth_token);
@@ -162,10 +178,7 @@
                         await signInAnonymously(auth);
                     }
                 } catch (authErr) {
-                    console.warn("Auth failed, switching to fallback mode");
-                    document.getElementById('error-msg').classList.remove('hidden');
-                    user = { uid: "guest_" + Math.random().toString(36).substr(2, 5) };
-                    proceedInit();
+                    handleFallbackMode();
                     return;
                 }
 
@@ -173,14 +186,23 @@
                     if (u) {
                         user = u;
                         proceedInit();
+                    } else {
+                        handleFallbackMode();
                     }
                 });
 
             } catch (e) {
-                console.error("Critical Init Error", e);
-                document.getElementById('loader').classList.add('hidden');
+                console.error("Firebase 初始化失敗:", e);
+                handleFallbackMode();
             }
         };
+
+        function handleFallbackMode() {
+            document.getElementById('error-msg').classList.remove('hidden');
+            document.getElementById('loader').classList.add('hidden');
+            user = { uid: "guest_" + Math.random().toString(36).substr(2, 5) };
+            proceedInit();
+        }
 
         function proceedInit() {
             if (!currentSyncId) {
@@ -203,8 +225,8 @@
                     .sort((a, b) => (b.ts || 0) - (a.ts || 0));
                 updateUI();
             }, (err) => {
-                console.error("Sync error", err);
-                updateUI();
+                console.error("同步數據時發生錯誤:", err);
+                showToast("雲端同步連線中斷");
             });
         }
 
@@ -212,6 +234,19 @@
             renderCalendar();
             updateStats();
             renderList();
+        }
+
+        // 計算包含手續費的實際總支出/收入
+        function calculateTotalWithFees(price, amount, type) {
+            const rawSubtotal = price * amount;
+            let fee = 0;
+            if (type === 'buy') {
+                fee = Math.max(20, Math.floor(rawSubtotal * 0.001425));
+                return { raw: rawSubtotal, fee: fee, final: rawSubtotal + fee };
+            } else {
+                fee = Math.max(20, Math.floor(rawSubtotal * 0.003));
+                return { raw: rawSubtotal, fee: fee, final: rawSubtotal - fee };
+            }
         }
 
         function renderCalendar() {
@@ -244,6 +279,8 @@
                     document.getElementById('selected-date').value = dateStr;
                     document.getElementById('modal-title').innerText = `${dateStr} 新增交易`;
                     document.getElementById('subtotal-display').innerText = '$0';
+                    document.getElementById('raw-subtotal').innerText = '$0';
+                    document.getElementById('fee-display').innerText = '$0';
                     document.getElementById('submit-btn').disabled = false;
                     document.getElementById('modal').classList.remove('hidden');
                 };
@@ -254,8 +291,8 @@
                 if (dayTrans.length > 0) {
                     let flow = 0;
                     dayTrans.forEach(t => {
-                        const total = (parseFloat(t.price) || 0) * (parseInt(t.amount) || 0);
-                        flow += (t.type === 'buy' ? -total : total);
+                        const result = calculateTotalWithFees(t.price, t.amount, t.type);
+                        flow += (t.type === 'buy' ? -result.final : result.final);
                     });
                     div.innerHTML += `<div class="text-[10px] font-bold px-1 py-0.5 rounded w-full truncate ${flow >= 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}">${flow >= 0 ? '+' : ''}${Math.round(flow).toLocaleString()}</div>`;
                 }
@@ -267,13 +304,13 @@
             let totalProfit = 0;
             let inv = {};
             transactions.forEach(t => {
-                const total = (parseFloat(t.price) || 0) * (parseInt(t.amount) || 0);
+                const result = calculateTotalWithFees(t.price, t.amount, t.type);
                 const name = (t.name || "未命名").trim();
                 if (t.type === 'buy') {
-                    totalProfit -= total;
+                    totalProfit -= result.final;
                     inv[name] = (inv[name] || 0) + (parseInt(t.amount) || 0);
                 } else {
-                    totalProfit += total;
+                    totalProfit += result.final;
                     inv[name] = (inv[name] || 0) - (parseInt(t.amount) || 0);
                 }
             });
@@ -291,7 +328,6 @@
                 return;
             }
             
-            // 按照股票名稱分組
             const grouped = transactions.reduce((acc, t) => {
                 const n = (t.name || "未命名").trim();
                 acc[n] = acc[n] || [];
@@ -301,17 +337,14 @@
 
             container.innerHTML = Object.keys(grouped).map(name => {
                 const trades = grouped[name];
-                
-                // 計算最高、最低股價
                 const prices = trades.map(t => parseFloat(t.price));
                 const maxPrice = Math.max(...prices);
                 const minPrice = Math.min(...prices);
                 
-                // 計算各股損益
                 let stockProfit = 0;
                 trades.forEach(t => {
-                    const total = (parseFloat(t.price) || 0) * (parseInt(t.amount) || 0);
-                    stockProfit += (t.type === 'buy' ? -total : total);
+                    const result = calculateTotalWithFees(t.price, t.amount, t.type);
+                    stockProfit += (t.type === 'buy' ? -result.final : result.final);
                 });
 
                 return `
@@ -332,10 +365,16 @@
                         </div>
                     </div>
                     <div class="text-xs space-y-1 pt-1">
-                        ${trades.map(t => `<div class="flex justify-between hover:bg-gray-50 p-1 rounded">
-                            <span class="text-gray-500">${t.date} <b class="${t.type==='buy'?'text-red-500':'text-green-600'}">${t.type==='buy'?'買入':'賣出'}</b></span>
-                            <span class="font-mono">$${t.price} &times; ${t.amount}</span>
-                        </div>`).join('')}
+                        ${trades.map(t => {
+                            const result = calculateTotalWithFees(t.price, t.amount, t.type);
+                            return `<div class="flex justify-between hover:bg-gray-50 p-1 rounded">
+                                <span class="text-gray-500">${t.date} <b class="${t.type==='buy'?'text-red-500':'text-green-600'}">${t.type==='buy'?'買入':'賣出'}</b></span>
+                                <div class="flex flex-col items-end">
+                                    <span class="font-mono">$${t.price} &times; ${t.amount}</span>
+                                    <span class="text-[9px] text-gray-400">(含手續費: $${result.fee})</span>
+                                </div>
+                            </div>`;
+                        }).join('')}
                     </div>
                 </div>
             `;}).join('');
@@ -345,10 +384,14 @@
             const price = parseFloat(document.getElementById('trade-price').value) || 0;
             const amount = parseInt(document.getElementById('trade-amount').value) || 0;
             const type = document.getElementById('trade-type').value;
-            const subtotal = price * amount;
+            
+            const result = calculateTotalWithFees(price, amount, type);
+            
+            document.getElementById('raw-subtotal').innerText = `$${Math.round(result.raw).toLocaleString()}`;
+            document.getElementById('fee-display').innerText = `$${result.fee}`;
             
             const display = document.getElementById('subtotal-display');
-            display.innerText = `$${Math.round(subtotal).toLocaleString()}`;
+            display.innerText = `$${Math.round(result.final).toLocaleString()}`;
             display.className = `text-xl font-bold ${type === 'buy' ? 'text-red-500' : 'text-green-600'}`;
         };
 
@@ -376,7 +419,10 @@
 
         document.getElementById('trade-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!db) { showToast("系統連線中，請稍候"); return; }
+            if (!db) { 
+                showToast("目前處於離線模式");
+                return; 
+            }
             
             const btn = document.getElementById('submit-btn');
             if (btn.disabled) return;
@@ -395,7 +441,7 @@
                     createdAt: serverTimestamp()
                 });
                 
-                showToast("✅ 已成功儲存交易");
+                showToast("✅ 已成功儲存雲端紀錄");
                 
                 setTimeout(() => {
                     closeModal();
@@ -404,8 +450,8 @@
                 }, 300);
 
             } catch (err) { 
-                console.error("Save Error:", err);
-                showToast("❌ 儲存失敗，請重試"); 
+                console.error("儲存失敗:", err);
+                showToast("❌ 雲端儲存失敗"); 
                 btn.disabled = false;
                 btn.innerText = "確認並儲存紀錄";
             }
