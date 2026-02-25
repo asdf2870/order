@@ -91,20 +91,27 @@
         <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
             <div class="flex justify-between items-center mb-6">
                 <h4 id="modal-title" class="text-lg font-bold text-gray-800">交易紀錄</h4>
-                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">X</button>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
             </div>
             <form id="trade-form" class="space-y-4">
                 <input type="hidden" id="selected-date">
                 <input type="text" id="stock-name" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 outline-none" placeholder="股票名稱 (如：日立)">
                 <div class="grid grid-cols-2 gap-4">
-                    <select id="trade-type" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3">
+                    <select id="trade-type" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" onchange="calculateSubtotal()">
                         <option value="buy">買進 (+)</option>
                         <option value="sell">賣出 (-)</option>
                     </select>
-                    <input type="number" step="0.01" id="trade-price" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="價格">
+                    <input type="number" step="0.01" id="trade-price" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="單價" oninput="calculateSubtotal()">
                 </div>
-                <input type="number" id="trade-amount" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="股數">
-                <button type="submit" id="submit-btn" class="w-full bg-slate-800 text-white font-bold py-4 rounded-xl mt-4">儲存紀錄</button>
+                <input type="number" id="trade-amount" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="股數" oninput="calculateSubtotal()">
+                
+                <!-- 新增：總金額顯示區 -->
+                <div class="bg-gray-50 rounded-xl p-4 flex justify-between items-center">
+                    <span class="text-gray-500 text-sm font-medium">預計成交總額</span>
+                    <span id="subtotal-display" class="text-xl font-bold text-gray-800">$0</span>
+                </div>
+
+                <button type="submit" id="submit-btn" class="w-full bg-slate-800 text-white font-bold py-4 rounded-xl mt-2 hover:bg-slate-700 transition">確認並儲存紀錄</button>
             </form>
         </div>
     </div>
@@ -147,7 +154,6 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // 嘗試匿名登入，若報錯則回退到虛擬 User 模式
                 try {
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                         await signInWithCustomToken(auth, __initial_auth_token);
@@ -157,7 +163,6 @@
                 } catch (authErr) {
                     console.warn("Auth failed, switching to fallback mode", authErr);
                     document.getElementById('error-msg').classList.remove('hidden');
-                    // 模擬一個 User
                     user = { uid: "guest_user_" + Math.random().toString(36).substr(2, 9) };
                     proceedInit();
                     return;
@@ -198,7 +203,6 @@
                 updateUI();
             }, (err) => {
                 console.error("Sync error", err);
-                // 即使報錯也渲染現有數據或空介面，不卡死
                 updateUI();
             });
         }
@@ -235,6 +239,11 @@
                 div.onclick = () => {
                     document.getElementById('selected-date').value = dateStr;
                     document.getElementById('modal-title').innerText = `${dateStr} 交易`;
+                    
+                    // 重置表單數值與總額
+                    document.getElementById('trade-form').reset();
+                    document.getElementById('subtotal-display').innerText = '$0';
+                    
                     document.getElementById('modal').classList.remove('hidden');
                 };
 
@@ -300,6 +309,18 @@
             `).join('');
         }
 
+        // 新增：計算總金額邏輯
+        window.calculateSubtotal = () => {
+            const price = parseFloat(document.getElementById('trade-price').value) || 0;
+            const amount = parseInt(document.getElementById('trade-amount').value) || 0;
+            const type = document.getElementById('trade-type').value;
+            const subtotal = price * amount;
+            
+            const display = document.getElementById('subtotal-display');
+            display.innerText = `$${Math.round(subtotal).toLocaleString()}`;
+            display.className = `text-xl font-bold ${type === 'buy' ? 'text-red-500' : 'text-green-600'}`;
+        };
+
         window.changeMonth = (d) => { currentMonth.setMonth(currentMonth.getMonth() + d); updateUI(); };
         window.closeModal = () => document.getElementById('modal').classList.add('hidden');
         window.openSyncModal = () => {
@@ -335,8 +356,10 @@
                     ts: Date.now(),
                     createdAt: serverTimestamp()
                 });
+                
+                // 修改：儲存成功後確實執行 closeModal 並顯示訊息
                 closeModal();
-                showToast("儲存成功");
+                showToast("紀錄已儲存");
             } catch (err) { 
                 console.error(err);
                 showToast("儲存失敗: " + (err.message || "權限不足")); 
