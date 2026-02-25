@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股市交易紀錄與損益看板 (雲端同步強化版)</title>
+    <title>股市交易紀錄與損益看板 (編輯刪除強化版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
@@ -89,7 +89,7 @@
         </div>
     </div>
 
-    <!-- Modal 交易紀錄 -->
+    <!-- Modal 交易紀錄 (新增與修改共用) -->
     <div id="modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
             <div class="flex justify-between items-center mb-6">
@@ -98,15 +98,12 @@
             </div>
             <form id="trade-form" class="space-y-4">
                 <input type="hidden" id="selected-date">
+                <input type="hidden" id="edit-transaction-id"> <!-- 用於判斷是編輯還是新增 -->
                 
-                <!-- 股票名稱輸入與點選區 -->
                 <div class="space-y-2">
                     <label class="text-xs font-bold text-gray-500 ml-1">股票名稱</label>
                     <input type="text" id="stock-name" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="輸入名稱 (如：台積電)">
-                    
-                    <div id="quick-stock-tags" class="flex flex-wrap gap-2 pt-1">
-                        <!-- 由 JS 動態生成常用股名 -->
-                    </div>
+                    <div id="quick-stock-tags" class="flex flex-wrap gap-2 pt-1"></div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
@@ -128,7 +125,6 @@
                     <input type="number" id="trade-amount" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="股數 (1張=1000)" oninput="calculateSubtotal()">
                 </div>
                 
-                <!-- 總金額顯示區 -->
                 <div class="bg-gray-50 rounded-xl p-4 space-y-2 border border-dashed border-gray-300">
                     <div class="flex justify-between items-center text-xs text-gray-500">
                         <span>成交額: <span id="raw-subtotal">$0</span></span>
@@ -140,7 +136,10 @@
                     </div>
                 </div>
 
-                <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl mt-2 hover:bg-blue-700 transition shadow-lg shadow-blue-200">確認並儲存紀錄</button>
+                <div class="flex flex-col gap-2">
+                    <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 transition shadow-lg shadow-blue-200">儲存紀錄</button>
+                    <button type="button" id="delete-btn" onclick="deleteTransaction()" class="hidden w-full bg-red-50 text-red-500 font-bold py-3 rounded-xl hover:bg-red-100 transition">刪除此筆紀錄</button>
+                </div>
             </form>
         </div>
     </div>
@@ -149,7 +148,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         const defaultFirebaseConfig = {
@@ -259,25 +258,19 @@
             renderQuickTags();
         }
 
-        // 新增功能：生成常用股名點選標籤
         function renderQuickTags() {
             const tagContainer = document.getElementById('quick-stock-tags');
             if (!tagContainer) return;
-            
-            // 從交易紀錄中提取所有不重複的股名
             const existingNames = [...new Set(transactions.map(t => (t.name || "").trim()))].filter(n => n !== "" && n !== "未命名");
-            
             if (existingNames.length === 0) {
                 tagContainer.innerHTML = '<span class="text-[10px] text-gray-400 italic">尚未有常用股名</span>';
                 return;
             }
-
             tagContainer.innerHTML = existingNames.map(name => 
                 `<span onclick="selectStock('${name}')" class="stock-tag bg-gray-100 text-gray-600 px-2 py-1 rounded text-[10px] border border-gray-200 font-medium">${name}</span>`
             ).join('');
         }
 
-        // 全域函數供點選使用
         window.selectStock = (name) => {
             const input = document.getElementById('stock-name');
             input.value = name;
@@ -322,16 +315,7 @@
                 div.className = 'calendar-day p-2 flex flex-col items-start hover:bg-blue-50 cursor-pointer overflow-hidden';
                 
                 div.onclick = () => {
-                    const form = document.getElementById('trade-form');
-                    form.reset();
-                    document.getElementById('selected-date').value = dateStr;
-                    document.getElementById('modal-title').innerText = `${dateStr} 新增交易`;
-                    document.getElementById('subtotal-display').innerText = '$0';
-                    document.getElementById('raw-subtotal').innerText = '$0';
-                    document.getElementById('fee-display').innerText = '$0';
-                    document.getElementById('submit-btn').disabled = false;
-                    document.getElementById('modal').classList.remove('hidden');
-                    renderQuickTags(); // 打開時更新一次標籤
+                    openModal(dateStr);
                 };
 
                 div.innerHTML = `<span class="text-xs font-bold text-gray-400 mb-1">${d}</span>`;
@@ -348,6 +332,36 @@
                 body.appendChild(div);
             }
         }
+
+        // 修改後的開啟 Modal 邏輯，支援新增與帶入現有資料編輯
+        window.openModal = (dateStr, transId = null) => {
+            const form = document.getElementById('trade-form');
+            form.reset();
+            
+            document.getElementById('edit-transaction-id').value = transId || "";
+            document.getElementById('selected-date').value = dateStr;
+            
+            const delBtn = document.getElementById('delete-btn');
+            
+            if (transId) {
+                const t = transactions.find(x => x.id === transId);
+                if (t) {
+                    document.getElementById('modal-title').innerText = `編輯交易 (${t.date})`;
+                    document.getElementById('stock-name').value = t.name;
+                    document.getElementById('trade-type').value = t.type;
+                    document.getElementById('trade-price').value = t.price;
+                    document.getElementById('trade-amount').value = t.amount;
+                    delBtn.classList.remove('hidden');
+                }
+            } else {
+                document.getElementById('modal-title').innerText = `${dateStr} 新增交易`;
+                delBtn.classList.add('hidden');
+            }
+
+            calculateSubtotal();
+            document.getElementById('modal').classList.remove('hidden');
+            renderQuickTags();
+        };
 
         function updateStats() {
             let totalProfit = 0;
@@ -416,11 +430,14 @@
                     <div class="text-xs space-y-1 pt-1">
                         ${trades.map(t => {
                             const result = calculateTotalWithFees(t.price, t.amount, t.type);
-                            return `<div class="flex justify-between hover:bg-gray-50 p-1 rounded">
-                                <span class="text-gray-500">${t.date} <b class="${t.type==='buy'?'text-red-500':'text-green-600'}">${t.type==='buy'?'買入':'賣出'}</b></span>
+                            return `<div class="flex justify-between items-center hover:bg-gray-50 p-2 rounded group cursor-pointer" onclick="openModal('${t.date}', '${t.id}')">
+                                <div class="flex flex-col">
+                                    <span class="text-gray-500">${t.date} <b class="${t.type==='buy'?'text-red-500':'text-green-600'}">${t.type==='buy'?'買入':'賣出'}</b></span>
+                                    <span class="text-[10px] text-gray-400">點選修改</span>
+                                </div>
                                 <div class="flex flex-col items-end">
-                                    <span class="font-mono">$${t.price} &times; ${t.amount}</span>
-                                    <span class="text-[9px] text-gray-400">(含手續費: $${result.fee})</span>
+                                    <span class="font-mono font-bold">$${t.price} &times; ${t.amount}</span>
+                                    <span class="text-[9px] text-gray-400">(結算: $${Math.round(result.final).toLocaleString()})</span>
                                 </div>
                             </div>`;
                         }).join('')}
@@ -463,6 +480,23 @@
             }
         };
 
+        // 新增刪除功能
+        window.deleteTransaction = async () => {
+            const transId = document.getElementById('edit-transaction-id').value;
+            if (!transId || !confirm("確定要刪除這筆交易紀錄嗎？此動作無法復原。")) return;
+
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`, transId);
+                await deleteDoc(docRef);
+                showToast("✅ 紀錄已成功刪除");
+                closeModal();
+            } catch (err) {
+                console.error("刪除失敗:", err);
+                showToast("❌ 刪除失敗");
+            }
+        };
+
+        // 提交表單：判斷新增或修改
         document.getElementById('trade-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!db) { 
@@ -470,36 +504,47 @@
                 return; 
             }
             
+            const transId = document.getElementById('edit-transaction-id').value;
             const btn = document.getElementById('submit-btn');
             if (btn.disabled) return;
             btn.disabled = true;
             btn.innerText = "儲存中...";
 
+            const data = {
+                date: document.getElementById('selected-date').value,
+                name: document.getElementById('stock-name').value.trim() || "未命名",
+                type: document.getElementById('trade-type').value,
+                price: parseFloat(document.getElementById('trade-price').value) || 0,
+                amount: parseInt(document.getElementById('trade-amount').value) || 0,
+                ts: Date.now(),
+                updatedAt: serverTimestamp()
+            };
+
             try {
-                const col = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
-                await addDoc(col, {
-                    date: document.getElementById('selected-date').value,
-                    name: document.getElementById('stock-name').value.trim() || "未命名",
-                    type: document.getElementById('trade-type').value,
-                    price: parseFloat(document.getElementById('trade-price').value) || 0,
-                    amount: parseInt(document.getElementById('trade-amount').value) || 0,
-                    ts: Date.now(),
-                    createdAt: serverTimestamp()
-                });
-                
-                showToast("✅ 已成功儲存雲端紀錄");
+                if (transId) {
+                    // 修改
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`, transId);
+                    await updateDoc(docRef, data);
+                    showToast("✅ 已成功更新紀錄");
+                } else {
+                    // 新增
+                    const col = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
+                    data.createdAt = serverTimestamp();
+                    await addDoc(col, data);
+                    showToast("✅ 已成功儲存紀錄");
+                }
                 
                 setTimeout(() => {
                     closeModal();
-                    btn.innerText = "確認並儲存紀錄";
+                    btn.innerText = "儲存紀錄";
                     btn.disabled = false;
                 }, 300);
 
             } catch (err) { 
-                console.error("儲存失敗:", err);
-                showToast("❌ 雲端儲存失敗"); 
+                console.error("操作失敗:", err);
+                showToast("❌ 儲存失敗"); 
                 btn.disabled = false;
-                btn.innerText = "確認並儲存紀錄";
+                btn.innerText = "儲存紀錄";
             }
         });
 
