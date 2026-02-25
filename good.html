@@ -20,7 +20,7 @@
     <div id="loader" class="loading-overlay">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
         <p class="mt-4 text-gray-600 font-medium italic">正在連接雲端資料庫...</p>
-        <div id="sync-tip" class="mt-8 text-xs text-gray-400 max-w-xs text-center px-4">如果一直卡住，請確認網路。</div>
+        <div id="sync-tip" class="mt-8 text-xs text-gray-400 max-w-xs text-center px-4">如果一直卡住，請確認網路或同步碼。</div>
     </div>
 
     <div class="max-w-6xl mx-auto">
@@ -87,7 +87,7 @@
             <div class="space-y-4">
                 <div>
                     <label class="block text-xs font-medium text-gray-400 uppercase mb-1">同步碼</label>
-                    <input type="text" id="sync-input" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-mono font-bold tracking-widest outline-none">
+                    <input type="text" id="sync-input" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-mono font-bold tracking-widest outline-none" placeholder="輸入 8 碼同步碼">
                 </div>
                 <button onclick="saveSyncCode()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">確認並同步</button>
                 <button onclick="closeSyncModal()" class="w-full text-gray-400 text-sm py-2">取消</button>
@@ -108,7 +108,7 @@
                 <input type="hidden" id="selected-date">
                 <div>
                     <label class="block text-sm font-medium text-gray-600">股票名稱/代碼</label>
-                    <input type="text" id="stock-name" required class="mt-1 block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 outline-none">
+                    <input type="text" id="stock-name" required class="mt-1 block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 outline-none" placeholder="例如：日立 或 1503">
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div>
@@ -137,18 +137,10 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyBzWK76cZTIKEoJGoc9bqi0M4sGLIMsUaE",
-            authDomain: "good-e9e4e.firebaseapp.com",
-            projectId: "good-e9e4e",
-            storageBucket: "good-e9e4e.firebasestorage.app",
-            messagingSenderId: "878748843198",
-            appId: "1:878748843198:web:6183a33453463ef8e2b2ef"
-        };
-
+        const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
@@ -171,9 +163,20 @@
         };
 
         const init = async () => {
+            const initAuth = async () => {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            };
+
+            await initAuth();
+
             onAuthStateChanged(auth, (user) => {
                 if (user) {
                     currentUser = user;
+                    // 如果沒有設定同步碼，預設使用 uid 前 8 碼
                     if (!currentSyncId) {
                         currentSyncId = user.uid.substring(0, 8);
                         localStorage.setItem('user_sync_code', currentSyncId);
@@ -181,30 +184,30 @@
                     document.getElementById('sync-code-display').innerText = currentSyncId;
                     startDataSubscription();
                     document.getElementById('loader').classList.add('hidden');
-                } else {
-                    signInAnonymously(auth).catch(err => {
-                        console.error("Auth Error", err);
-                        document.getElementById('loader').classList.add('hidden');
-                        showToast("身份驗證失敗，請檢查網路");
-                    });
                 }
             });
         };
 
         function startDataSubscription() {
             if (unsubscribe) unsubscribe();
-            if (!currentSyncId) return;
+            if (!currentSyncId || !currentUser) return;
 
+            // 使用絕對穩定的集合路徑
             const colRef = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
             
+            console.log("正在訂閱路徑:", `sync_${currentSyncId}`);
+
             unsubscribe = onSnapshot(colRef, (snapshot) => {
-                transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-                    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
-                console.log("資料更新:", transactions); // 除錯檢查
+                transactions = snapshot.docs.map(doc => ({ 
+                    id: doc.id, 
+                    ...doc.data() 
+                })).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+                
+                console.log("同步成功，目前總紀錄數:", transactions.length);
                 updateUI();
             }, (err) => {
-                console.error("Firestore Subscription Error:", err);
-                showToast("連線發生錯誤，請重新整理");
+                console.error("同步失敗:", err);
+                showToast("雲端同步連線失敗，請檢查網路。");
             });
         }
 
@@ -261,8 +264,8 @@
                     flowDiv.innerText = (flow >= 0 ? '+' : '') + Math.round(flow).toLocaleString();
                     dayDiv.appendChild(flowDiv);
 
-                    // 額外顯示當日交易名稱縮寫
-                    const names = [...new Set(dayTrans.map(t => t.name))].slice(0, 2);
+                    // 顯示交易名稱縮寫
+                    const names = [...new Set(dayTrans.map(t => t.name.trim()))].slice(0, 2);
                     names.forEach(name => {
                         const nameDiv = document.createElement('div');
                         nameDiv.className = 'text-[9px] text-gray-400 truncate w-full';
@@ -277,25 +280,27 @@
         function updateStats() {
             let profit = 0;
             let inv = {};
+            
             transactions.forEach(t => {
                 const { total } = calculateTransaction(t.type, t.price, t.amount);
-                const name = t.name.trim();
-                const amt = parseInt(t.amount);
+                const name = (t.name || "未命名").trim();
+                const amt = parseInt(t.amount) || 0;
                 
                 if (t.type === 'buy') { 
                     profit -= total; 
                     inv[name] = (inv[name] || 0) + amt; 
-                }
-                else { 
+                } else { 
                     profit += total; 
                     inv[name] = (inv[name] || 0) - amt; 
                 }
             });
+
             const profitEl = document.getElementById('total-profit');
             if (profitEl) profitEl.innerText = `$${Math.round(profit).toLocaleString()}`;
             
             const listEl = document.getElementById('current-holdings-list');
             const stocks = Object.keys(inv).filter(k => inv[k] > 0);
+            
             if (listEl) {
                 listEl.innerHTML = stocks.length ? stocks.map(s => `
                     <div class="bg-purple-50 border border-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm font-bold flex items-center">
@@ -308,12 +313,15 @@
         function renderStockList() {
             const container = document.getElementById('stock-list-container');
             if (!container) return;
+            
             if (!transactions.length) {
                 container.innerHTML = '<p class="text-gray-400 text-center py-4">目前尚無交易數據</p>';
                 return;
             }
+
+            // 按名稱分組並清理名稱
             const grouped = transactions.reduce((acc, t) => {
-                const name = t.name.trim();
+                const name = (t.name || "未命名").trim();
                 acc[name] = acc[name] || [];
                 acc[name].push(t);
                 return acc;
@@ -342,7 +350,7 @@
                                     <tr class="border-b border-gray-100/50 last:border-0">
                                         <td class="py-3 text-gray-500 font-mono">${t.date}</td>
                                         <td class="${t.type==='buy'?'text-blue-500':'text-red-500'} font-bold">${t.type==='buy'?'買入':'賣出'}</td>
-                                        <td class="text-right font-medium text-gray-700">$${t.price.toLocaleString()} / ${t.amount.toLocaleString()}股</td>
+                                        <td class="text-right font-medium text-gray-700">$${parseFloat(t.price).toLocaleString()} / ${parseInt(t.amount).toLocaleString()}股</td>
                                     </tr>
                                 `).join('')}
                             </tbody>
@@ -352,7 +360,7 @@
             `).join('');
         }
 
-        window.changeMonth = (d) => { currentMonth.setMonth(currentMonth.getMonth() + d); renderCalendar(); };
+        window.changeMonth = (d) => { currentMonth.setMonth(currentMonth.getMonth() + d); updateUI(); };
         window.openModal = (d) => { 
             document.getElementById('selected-date').value = d;
             document.getElementById('modal-title').innerText = `${d} 交易紀錄`;
@@ -376,31 +384,25 @@
             document.getElementById('sync-code-display').innerText = val;
             startDataSubscription();
             closeSyncModal();
-            showToast("已連線至同步空間: " + val);
+            showToast("同步碼已更新，正在載入資料...");
         };
 
         document.getElementById('trade-form').onsubmit = async (e) => {
             e.preventDefault();
             
             if (!currentUser) {
-                showToast("雲端尚未就緒，請稍候");
+                showToast("連線未就緒，請檢查網路");
                 return;
             }
             
-            if (!currentSyncId) {
-                showToast("請先設定同步碼");
-                return;
-            }
-
             const btn = document.getElementById('submit-btn');
-            const originalText = btn.innerText;
             btn.disabled = true;
             btn.innerText = "儲存中...";
 
             try {
                 const colPath = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
                 
-                const payload = {
+                await addDoc(colPath, {
                     date: document.getElementById('selected-date').value,
                     name: document.getElementById('stock-name').value.trim(),
                     type: document.getElementById('trade-type').value,
@@ -408,17 +410,16 @@
                     amount: parseInt(document.getElementById('trade-amount').value),
                     ts: Date.now(),
                     createdAt: serverTimestamp()
-                };
+                });
                 
-                await addDoc(colPath, payload);
-                showToast("儲存成功！");
+                showToast("紀錄已成功同步至雲端！");
                 closeModal();
             } catch (err) {
-                console.error("Save Error:", err);
-                showToast("儲存失敗: " + err.message);
+                console.error("儲存失敗:", err);
+                showToast("儲存失敗，請再試一次。");
             } finally {
                 btn.disabled = false;
-                btn.innerText = originalText;
+                btn.innerText = "儲存紀錄";
             }
         };
 
