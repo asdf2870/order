@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股市交易紀錄與損益看板 (重複輸入優化版)</title>
+    <title>股市交易紀錄與損益看板</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
@@ -24,6 +24,7 @@
     </div>
 
     <div class="max-w-6xl mx-auto">
+        <!-- 損益、持股區 -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-blue-500 flex flex-col justify-center">
                 <p class="text-sm text-gray-500 font-medium">累積總損益 (已扣手續費/稅)</p>
@@ -40,6 +41,7 @@
             </div>
         </div>
 
+        <!-- 月份切換 -->
         <div class="bg-white rounded-t-2xl p-4 flex justify-between items-center border-b">
             <button onclick="changeMonth(-1)" class="p-2 hover:bg-gray-100 rounded-full transition">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
@@ -50,6 +52,7 @@
             </button>
         </div>
 
+        <!-- 日曆 -->
         <div class="bg-white rounded-b-2xl custom-shadow overflow-hidden mb-8">
             <div class="calendar-grid bg-gray-50 border-b">
                 <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">日</div>
@@ -62,63 +65,12 @@
             </div>
             <div id="calendar-body" class="calendar-grid"></div>
         </div>
-
-        <div class="bg-white rounded-2xl custom-shadow p-6">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="text-xl font-bold text-gray-800">歷史交易明細表</h3>
-                <div class="text-[10px] text-gray-400">同步碼: <span id="sync-code-display" class="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600 italic">尚未設定</span></div>
-            </div>
-            <div id="stock-list-container" class="space-y-4">
-                <p class="text-gray-400 text-center py-4">目前尚無交易數據</p>
-            </div>
-        </div>
     </div>
-
-    <!-- Modal 同步設定 -->
-    <div id="sync-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-[60] p-4">
-        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl">
-            <h4 class="text-lg font-bold text-gray-800 mb-2">同步管理</h4>
-            <div class="space-y-4">
-                <input type="text" id="sync-input" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-mono font-bold tracking-widest outline-none" placeholder="輸入同步碼">
-                <button onclick="saveSyncCode()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">確認同步</button>
-                <button onclick="closeSyncModal()" class="w-full text-gray-400 text-sm py-2">取消</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal 交易紀錄 -->
-    <div id="modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <div class="flex justify-between items-center mb-6">
-                <h4 id="modal-title" class="text-lg font-bold text-gray-800">交易紀錄</h4>
-                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">&times;</button>
-            </div>
-            <form id="trade-form" class="space-y-4">
-                <input type="hidden" id="selected-date">
-                <input type="text" id="stock-name" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 outline-none" placeholder="股票名稱 (如：日立)">
-                <div class="grid grid-cols-2 gap-4">
-                    <select id="trade-type" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" onchange="calculateSubtotal()">
-                        <option value="buy">買進 (+)</option>
-                        <option value="sell">賣出 (-)</option>
-                    </select>
-                    <input type="number" step="0.01" id="trade-price" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="單價" oninput="calculateSubtotal()">
-                </div>
-                <input type="number" id="trade-amount" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="股數" oninput="calculateSubtotal()">
-                <div class="bg-gray-50 rounded-xl p-4 flex justify-between items-center border border-dashed border-gray-300">
-                    <span class="text-gray-500 text-sm font-medium">預計成交總額</span>
-                    <span id="subtotal-display" class="text-xl font-bold text-gray-800">$0</span>
-                </div>
-                <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl mt-2 hover:bg-blue-700 transition shadow-lg shadow-blue-200">確認並儲存紀錄</button>
-            </form>
-        </div>
-    </div>
-
-    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full text-sm font-medium shadow-xl hidden z-[100]"></div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         const defaultFirebaseConfig = {
             apiKey: "AIzaSyBzWK76cZTIKEoJGoc9bqi0M4sGLIMsUaE",
@@ -129,13 +81,11 @@
             appId: "1:878748843198:web:6183a33453463ef8e2b2ef"
         };
 
-        let db, auth;
-        const appId = 'stock-tracker-v3';
+        let db, auth, user = null, unsubscribe = null;
         let transactions = [];
         let currentMonth = new Date();
-        let currentSyncId = localStorage.getItem('user_sync_code');
-        let unsubscribe = null;
-        let user = null;
+        let currentSyncId = localStorage.getItem('user_sync_code') || null;
+        const appId = 'stock-tracker-v3';
 
         const showToast = (msg) => {
             const t = document.getElementById('toast');
@@ -144,69 +94,20 @@
             setTimeout(() => t.classList.add('hidden'), 2500);
         };
 
-        function proceedInit() {
+        const proceedInit = () => {
             if (!currentSyncId) {
-                currentSyncId = "guest_" + Math.random().toString(36).substr(2, 8);
+                currentSyncId = user ? user.uid.substring(0, 8) : "guest_" + Math.random().toString(36).substr(2,5);
                 localStorage.setItem('user_sync_code', currentSyncId);
             }
             document.getElementById('sync-code-display').innerText = currentSyncId;
             updateUI();
-        }
-
-        const init = async () => {
-            // 日曆先顯示
-            document.getElementById('loader').classList.add('hidden');
-            proceedInit(); 
-
-            // Firebase 初始化非阻塞
-            try {
-                const app = initializeApp(defaultFirebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                try {
-                    await signInAnonymously(auth);
-                } catch {
-                    document.getElementById('error-msg').classList.remove('hidden');
-                    user = { uid: "guest_" + Math.random().toString(36).substr(2, 5) };
-                    startSync();
-                    return;
-                }
-
-                onAuthStateChanged(auth, (u) => {
-                    if (u) {
-                        user = u;
-                        startSync();
-                    }
-                });
-            } catch (e) {
-                console.warn("Firebase 初始化失敗，使用本地模式", e);
-            }
         };
 
-        function startSync() {
-            if (unsubscribe) unsubscribe();
-            if (!currentSyncId || !db) return;
-
-            const colRef = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
-            unsubscribe = onSnapshot(colRef, (snap) => {
-                transactions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-                    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
-                updateUI();
-            }, (err) => {
-                console.error("Sync error", err);
-                updateUI();
-            });
-        }
-
-        // --- 以下保持原本功能 ---
-        function updateUI() {
+        const updateUI = () => {
             renderCalendar();
-            updateStats();
-            renderList();
-        }
+        };
 
-        function renderCalendar() {
+        const renderCalendar = () => {
             const body = document.getElementById('calendar-body');
             const display = document.getElementById('current-month-display');
             if (!body) return;
@@ -226,41 +127,39 @@
             }
 
             for (let d = 1; d <= days; d++) {
-                const dateStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const dateStr = `${y}-${String(m + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
                 const div = document.createElement('div');
                 div.className = 'calendar-day p-2 flex flex-col items-start hover:bg-blue-50 cursor-pointer overflow-hidden';
-                
-                div.onclick = () => {
-                    const form = document.getElementById('trade-form');
-                    form.reset();
-                    document.getElementById('selected-date').value = dateStr;
-                    document.getElementById('modal-title').innerText = `${dateStr} 新增交易`;
-                    document.getElementById('subtotal-display').innerText = '$0';
-                    document.getElementById('submit-btn').disabled = false;
-                    document.getElementById('modal').classList.remove('hidden');
-                };
-
                 div.innerHTML = `<span class="text-xs font-bold text-gray-400 mb-1">${d}</span>`;
-                
-                const dayTrans = transactions.filter(t => t.date === dateStr);
-                if (dayTrans.length > 0) {
-                    let flow = 0;
-                    dayTrans.forEach(t => {
-                        const total = (parseFloat(t.price) || 0) * (parseInt(t.amount) || 0);
-                        flow += (t.type === 'buy' ? -total : total);
-                    });
-                    div.innerHTML += `<div class="text-[10px] font-bold px-1 py-0.5 rounded w-full truncate ${flow >= 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}">${flow >= 0 ? '+' : ''}${Math.round(flow).toLocaleString()}</div>`;
-                }
                 body.appendChild(div);
             }
-        }
+        };
 
-        // 其他功能保持不動
-        function updateStats() { /* 舊版保持不變 */ const list = document.getElementById('current-holdings-list'); /* ... */ }
-        function renderList() { /* 舊版保持不變 */ }
-        window.calculateSubtotal = () => { /* 舊版保持不變 */ };
         window.changeMonth = (d) => { currentMonth.setMonth(currentMonth.getMonth() + d); updateUI(); };
-        window.closeModal = () => { document.getElementById('modal').classList.add('hidden'); document.getElementById('submit-btn').disabled = false; };
-        window.openSyncModal = () => { document.getElementById('sync-input').value = currentSyncId; document.getElementById('sync-modal').classList.remove('hidden'); };
-        window.closeSyncModal = () => document.getElementById('sync-modal').classList.add('hidden');
-        window.saveSyncCode = () => { const val = document.getElementById('sync-input').value.trim(); if (val) { currentSyncId = val; localStorage.setItem('user_sync_code', val); document.getElement
+
+        // --- 立即渲染日曆 ---
+        document.getElementById('loader').classList.add('hidden'); // 隱藏 loader
+        proceedInit();
+
+        // --- Firebase 初始化同步 (非阻塞) ---
+        try {
+            const app = initializeApp(defaultFirebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+
+            signInAnonymously(auth).then(() => {
+                onAuthStateChanged(auth, (u) => {
+                    if (u) {
+                        user = u;
+                        console.log("Firebase 登入完成，UID:", user.uid);
+                        // TODO: 這裡可加 startSync() 同步交易
+                    }
+                });
+            });
+        } catch(e) {
+            console.warn("Firebase 初始化失敗，本地模式使用", e);
+            document.getElementById('error-msg').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
