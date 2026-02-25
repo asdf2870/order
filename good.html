@@ -22,6 +22,7 @@
     <div id="loader" class="loading-overlay">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         <p class="mt-4 text-gray-600 font-medium italic">正在連接雲端數據庫...</p>
+        <p id="error-fallback-msg" class="mt-2 text-xs text-red-400 hidden">連線時間過長，請確認網路環境</p>
     </div>
 
     <div class="max-w-6xl mx-auto">
@@ -155,12 +156,19 @@
         import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, setDoc, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        const firebaseConfig = JSON.parse(__firebase_config);
+        // --- 安全讀取配置與防錯 ---
+        let firebaseConfig;
+        try {
+            firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        } catch (e) {
+            console.error("Firebase config parse error", e);
+        }
+
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'stock-tracker-v4';
         
         let db, auth;
         let transactions = [];
-        let stockOptions = ['台積電', '鴻海', '聯發科', '長榮']; // 初始預設
+        let stockOptions = ['台積電', '鴻海', '聯發科', '長榮']; 
         let currentMonth = new Date();
         let user = null;
         let currentSyncId = localStorage.getItem('user_sync_code');
@@ -177,11 +185,20 @@
         };
 
         const init = async () => {
+            if (!firebaseConfig) {
+                console.warn("未偵測到 Firebase 配置，程式進入離線/預覽模式");
+                document.getElementById('loader').classList.add('hidden');
+                document.getElementById('sync-code-display').innerText = "離線模式";
+                updateUI();
+                return;
+            }
+
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
+                // 認證邏輯
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
@@ -201,24 +218,23 @@
                     }
                 });
             } catch (error) {
-                console.error(error);
+                console.error("Initialization error:", error);
+                document.getElementById('error-fallback-msg').classList.remove('hidden');
             }
         };
 
         const startSync = () => {
             if (unsubscribe) unsubscribe();
             if (unsubscribeOptions) unsubscribeOptions();
-            if (!user) return;
+            if (!user || !db) return;
 
-            // 同步交易資料
             const colRef = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
             unsubscribe = onSnapshot(colRef, (snap) => {
                 transactions = snap.docs.filter(d => d.id !== 'meta_options').map(doc => ({ id: doc.id, ...doc.data() }))
                     .sort((a, b) => (b.ts || 0) - (a.ts || 0));
                 updateUI();
-            });
+            }, (err) => console.error("Snapshot error:", err));
 
-            // 同步股名清單
             const optionsDoc = doc(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`, 'meta_options');
             unsubscribeOptions = onSnapshot(optionsDoc, (docSnap) => {
                 if (docSnap.exists()) {
@@ -230,9 +246,7 @@
 
         const renderStockChips = () => {
             const container = document.getElementById('stock-chips');
-            const input = document.getElementById('stock-name');
             if (!container) return;
-
             container.innerHTML = stockOptions.map(name => `
                 <span class="stock-chip bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold border border-blue-200 hover:bg-blue-600 hover:text-white" 
                       onclick="selectStock('${name}')">
@@ -271,8 +285,8 @@
         function updateUI() {
             renderCalendar();
             renderList();
+            renderStockChips();
             
-            // 更新總結
             let profit = 0;
             let currentInv = {};
             transactions.forEach(t => {
@@ -351,15 +365,15 @@
             }).join('');
         }
 
-        // 表單提交
         document.getElementById('trade-form').addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (!db) { showToast("離線模式無法儲存"); return; }
+            
             const btn = document.getElementById('submit-btn');
             const name = document.getElementById('stock-name').value.trim();
             btn.disabled = true;
 
             try {
-                // 1. 儲存交易
                 const col = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
                 await addDoc(col, {
                     date: document.getElementById('selected-date').value,
@@ -370,14 +384,13 @@
                     ts: Date.now()
                 });
 
-                // 2. 檢查並新增股名到常用清單
                 if (!stockOptions.includes(name)) {
                     const newOptions = [...stockOptions, name];
                     const optDoc = doc(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`, 'meta_options');
                     await setDoc(optDoc, { list: newOptions });
                 }
 
-                showToast("已儲存並更新清單");
+                showToast("已儲存");
                 closeModal();
             } catch (err) {
                 showToast("儲存失敗");
