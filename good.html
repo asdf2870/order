@@ -131,14 +131,17 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         // 注意：這裡必須使用有效的 Firebase 配置才能啟動雲端同步
-        const defaultFirebaseConfig = {
-            apiKey: "", 
-            authDomain: "stock-tracker-auth.firebaseapp.com",
-            projectId: "stock-tracker-v3",
-            storageBucket: "stock-tracker-v3.appspot.com",
-            messagingSenderId: "000000000000",
-            appId: "1:000000000000:web:abc123def456"
-        };
+const defaultFirebaseConfig = {
+    apiKey: "AIzaSyBzWK76cZTIKEoJGoc9bqi0M4sGLIMsUaE",
+    authDomain: "good-e9e4e.firebaseapp.com",
+    databaseURL: "https://good-e9e4e-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "good-e9e4e",
+    storageBucket: "good-e9e4e.firebasestorage.app",
+    messagingSenderId: "878748843198",
+    appId: "1:878748843198:web:6183a33453463ef8e2b2ef",
+    measurementId: "G-QDF2C34VF3"
+};
+
 
         let db, auth;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'stock-tracker-v3';
