@@ -3,265 +3,507 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股市交易紀錄與損益看板</title>
+    <title>股市交易紀錄與損益看板 (雲端同步強化版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
         body { font-family: 'Noto Sans TC', sans-serif; background-color: #f3f4f6; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
-        .calendar-day { min-height: 100px; transition: all 0.2s; border-right: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7; }
+        .calendar-day { min-height: 110px; transition: all 0.2s; border-right: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7; }
         .calendar-day:hover { background-color: #f9fafb; cursor: pointer; }
         .custom-shadow { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        .stock-chip { cursor: pointer; transition: all 0.2s; }
+        .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.95); display: flex; align-items: center; justify-content: center; z-index: 100; flex-direction: column; }
+        .stock-tag { cursor: pointer; transition: all 0.2s; }
+        .stock-tag:hover { background-color: #dbeafe; color: #1e40af; border-color: #3b82f6; }
     </style>
 </head>
 <body class="p-4 md:p-8 pb-20">
+    <!-- 載入層 -->
+    <div id="loader" class="loading-overlay">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <p class="mt-4 text-gray-600 font-medium italic">正在建立加密連線...</p>
+        <p id="error-msg" class="mt-2 text-xs text-red-400 hidden text-center px-4">雲端連線失敗，目前為離線預覽模式</p>
+    </div>
+
     <div class="max-w-6xl mx-auto">
-        <!-- 看板區 -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div class="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-blue-500">
-                <p class="text-xs text-gray-500 font-bold mb-1">累積總損益</p>
-                <h2 id="total-profit" class="text-3xl font-bold text-gray-800">$0</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-blue-500 flex flex-col justify-center">
+                <p class="text-sm text-gray-500 font-medium">累積總損益 (已扣手續費/稅)</p>
+                <h2 id="total-profit" class="text-4xl font-bold mt-1 text-gray-800">$0</h2>
             </div>
-            <div class="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-purple-500 relative">
-                <p class="text-xs text-gray-500 font-bold mb-2">目前持股</p>
-                <div id="current-holdings-list" class="flex flex-wrap gap-2 text-sm">
-                    <span class="text-gray-400 italic">無數據</span>
+            <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-purple-500 relative">
+                <p class="text-sm text-gray-500 font-medium mb-2">目前持有股票</p>
+                <div id="current-holdings-list" class="flex flex-wrap gap-2">
+                    <span class="text-gray-400 text-sm italic">尚無持股</span>
                 </div>
+                <button onclick="openSyncModal()" class="absolute top-4 right-4 text-blue-500 hover:text-blue-700 transition" title="切換同步帳號">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.803a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.1-1.1" /></svg>
+                </button>
             </div>
         </div>
 
-        <!-- 月份切換 -->
         <div class="bg-white rounded-t-2xl p-4 flex justify-between items-center border-b">
-            <button onclick="changeMonth(-1)" class="p-2 hover:bg-gray-100 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+            <button onclick="changeMonth(-1)" class="p-2 hover:bg-gray-100 rounded-full transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
             </button>
-            <h3 id="current-month-display" class="font-bold text-gray-700">載入中...</h3>
-            <button onclick="changeMonth(1)" class="p-2 hover:bg-gray-100 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+            <h3 id="current-month-display" class="text-xl font-bold text-gray-700">正在載入...</h3>
+            <button onclick="changeMonth(1)" class="p-2 hover:bg-gray-100 rounded-full transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
             </button>
         </div>
 
-        <!-- 行事曆主體 -->
-        <div class="bg-white rounded-b-2xl custom-shadow overflow-hidden mb-6">
+        <div class="bg-white rounded-b-2xl custom-shadow overflow-hidden mb-8">
             <div class="calendar-grid bg-gray-50 border-b">
-                <div class="py-2 text-center text-[10px] font-bold text-gray-400">日</div>
-                <div class="py-2 text-center text-[10px] font-bold text-gray-400">一</div>
-                <div class="py-2 text-center text-[10px] font-bold text-gray-400">二</div>
-                <div class="py-2 text-center text-[10px] font-bold text-gray-400">三</div>
-                <div class="py-2 text-center text-[10px] font-bold text-gray-400">四</div>
-                <div class="py-2 text-center text-[10px] font-bold text-gray-400">五</div>
-                <div class="py-2 text-center text-[10px] font-bold text-gray-400">六</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">日</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">一</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">二</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">三</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">四</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">五</div>
+                <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">六</div>
             </div>
             <div id="calendar-body" class="calendar-grid"></div>
         </div>
 
-        <!-- 狀態與資訊 -->
-        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <div class="flex justify-between items-center">
-                <h3 class="font-bold text-gray-700">交易紀錄</h3>
-                <div id="cloud-status" class="text-[10px] flex items-center gap-1 px-2 py-1 rounded bg-gray-100 text-gray-500">
-                    <span class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
-                    等待雲端配置中...
-                </div>
+        <div class="bg-white rounded-2xl custom-shadow p-6">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-gray-800">歷史交易明細表</h3>
+                <div class="text-[10px] text-gray-400">同步碼: <span id="sync-code-display" class="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600 italic">尚未設定</span></div>
             </div>
-            <div id="stock-list-container" class="mt-4 space-y-2"></div>
+            <div id="stock-list-container" class="space-y-4">
+                <p class="text-gray-400 text-center py-4">目前尚無交易數據</p>
+            </div>
         </div>
     </div>
 
-    <!-- 交易 Modal -->
-    <div id="modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+    <!-- Modal 同步設定 -->
+    <div id="sync-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-[60] p-4">
         <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl">
-            <div class="flex justify-between items-center mb-4 border-b pb-2">
-                <h4 id="modal-title" class="font-bold">記錄交易</h4>
-                <button onclick="closeModal()" class="text-gray-400 text-xl">&times;</button>
+            <h4 class="text-lg font-bold text-gray-800 mb-2">同步管理</h4>
+            <p class="text-xs text-gray-500 mb-4">輸入您的專屬同步碼以載入雲端資料</p>
+            <div class="space-y-4">
+                <input type="text" id="sync-input" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-mono font-bold tracking-widest outline-none" placeholder="輸入同步碼">
+                <button onclick="saveSyncCode()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">確認同步</button>
+                <button onclick="closeSyncModal()" class="w-full text-gray-400 text-sm py-2">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 交易紀錄 -->
+    <div id="modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
+            <div class="flex justify-between items-center mb-6">
+                <h4 id="modal-title" class="text-lg font-bold text-gray-800">交易紀錄</h4>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">&times;</button>
             </div>
             <form id="trade-form" class="space-y-4">
                 <input type="hidden" id="selected-date">
-                <div>
-                    <label class="text-[10px] font-bold text-gray-400 uppercase">股名</label>
-                    <input type="text" id="stock-name" required class="w-full bg-gray-50 border-none rounded-lg p-3 mt-1 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                
+                <!-- 股票名稱輸入與點選區 -->
+                <div class="space-y-2">
+                    <label class="text-xs font-bold text-gray-500 ml-1">股票名稱</label>
+                    <input type="text" id="stock-name" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="輸入名稱 (如：台積電)">
+                    
+                    <div id="quick-stock-tags" class="flex flex-wrap gap-2 pt-1">
+                        <!-- 由 JS 動態生成常用股名 -->
+                    </div>
                 </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-[10px] font-bold text-gray-400 uppercase">類型</label>
-                        <select id="trade-type" class="w-full bg-gray-50 border-none rounded-lg p-3 mt-1 text-sm">
-                            <option value="buy">買進</option>
-                            <option value="sell">賣出</option>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-500 ml-1">交易類型</label>
+                        <select id="trade-type" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" onchange="calculateSubtotal()">
+                            <option value="buy">買進 (+)</option>
+                            <option value="sell">賣出 (-)</option>
                         </select>
                     </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-gray-400 uppercase">單價</label>
-                        <input type="number" step="0.01" id="trade-price" required class="w-full bg-gray-50 border-none rounded-lg p-3 mt-1 text-sm">
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-500 ml-1">成交單價</label>
+                        <input type="number" step="0.01" id="trade-price" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="單價" oninput="calculateSubtotal()">
                     </div>
                 </div>
-                <div>
-                    <label class="text-[10px] font-bold text-gray-400 uppercase">股數</label>
-                    <input type="number" id="trade-amount" required class="w-full bg-gray-50 border-none rounded-lg p-3 mt-1 text-sm">
+                
+                <div class="space-y-2">
+                    <label class="text-xs font-bold text-gray-500 ml-1">成交股數</label>
+                    <input type="number" id="trade-amount" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="股數 (1張=1000)" oninput="calculateSubtotal()">
                 </div>
-                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-blue-700 transition">確認儲存</button>
+                
+                <!-- 總金額顯示區 -->
+                <div class="bg-gray-50 rounded-xl p-4 space-y-2 border border-dashed border-gray-300">
+                    <div class="flex justify-between items-center text-xs text-gray-500">
+                        <span>成交額: <span id="raw-subtotal">$0</span></span>
+                        <span>手續費: <span id="fee-display">$0</span></span>
+                    </div>
+                    <div class="flex justify-between items-center border-t border-gray-200 pt-2">
+                        <span class="text-gray-500 text-sm font-medium">預計結算總額</span>
+                        <span id="subtotal-display" class="text-xl font-bold text-gray-800">$0</span>
+                    </div>
+                </div>
+
+                <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl mt-2 hover:bg-blue-700 transition shadow-lg shadow-blue-200">確認並儲存紀錄</button>
             </form>
         </div>
     </div>
 
-    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full text-xs font-medium hidden z-[100]"></div>
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full text-sm font-medium shadow-xl hidden z-[100]"></div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        let db = null;
-        let transactions = JSON.parse(localStorage.getItem('local_stock_trades') || '[]');
+        const defaultFirebaseConfig = {
+            apiKey: "AIzaSyBzWK76cZTIKEoJGoc9bqi0M4sGLIMsUaE",
+            authDomain: "good-e9e4e.firebaseapp.com",
+            databaseURL: "https://good-e9e4e-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "good-e9e4e",
+            storageBucket: "good-e9e4e.firebasestorage.app",
+            messagingSenderId: "878748843198",
+            appId: "1:878748843198:web:6183a33453463ef8e2b2ef",
+            measurementId: "G-QDF2C34VF3"
+        };
+
+        let db, auth;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'stock-tracker-v3';
+        let transactions = [];
         let currentMonth = new Date();
+        let currentSyncId = localStorage.getItem('user_sync_code');
+        let unsubscribe = null;
+        let user = null;
 
         const showToast = (msg) => {
             const t = document.getElementById('toast');
-            t.innerText = msg; t.classList.remove('hidden');
-            setTimeout(() => t.classList.add('hidden'), 2000);
+            t.innerText = msg;
+            t.classList.remove('hidden');
+            setTimeout(() => t.classList.add('hidden'), 2500);
         };
 
-        // 背景監測配置注入
-        const tryConnectCloud = async () => {
-            const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
-            if (!configStr) return false;
-
+        const init = async () => {
             try {
-                const config = JSON.parse(configStr);
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const config = (typeof __firebase_config !== 'undefined' && __firebase_config) 
+                               ? JSON.parse(__firebase_config) 
+                               : defaultFirebaseConfig;
+
+                if (!config.apiKey) {
+                    handleFallbackMode();
+                    return;
+                }
+
                 const app = initializeApp(config);
                 db = getFirestore(app);
-                const auth = getAuth(app);
-                
-                await signInAnonymously(auth);
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        const statusEl = document.getElementById('cloud-status');
-                        statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-green-500"></span> 雲端已同步 (${user.uid.substring(0,6)})`;
-                        statusEl.classList.replace('text-gray-500', 'text-green-600');
-                        
-                        // 同步本地數據到雲端（如果有）
-                        if (transactions.length > 0) {
-                            transactions.forEach(async (t) => {
-                                if (!t.synced) {
-                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `sync_${user.uid.substring(0,8)}`), {...t, synced: true});
-                                }
-                            });
-                        }
+                auth = getAuth(app);
+
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (authErr) {
+                    handleFallbackMode();
+                    return;
+                }
+
+                onAuthStateChanged(auth, (u) => {
+                    if (u) {
+                        user = u;
+                        proceedInit();
+                    } else {
+                        handleFallbackMode();
                     }
                 });
-                return true;
+
             } catch (e) {
-                console.warn("Cloud connection background attempt failed", e);
-                return false;
+                console.error("Firebase 初始化失敗:", e);
+                handleFallbackMode();
             }
         };
 
-        const render = () => {
-            renderCalendar();
-            renderList();
-            updateStats();
-            localStorage.setItem('local_stock_trades', JSON.stringify(transactions));
-        };
+        function handleFallbackMode() {
+            document.getElementById('error-msg').classList.remove('hidden');
+            document.getElementById('loader').classList.add('hidden');
+            user = { uid: "guest_" + Math.random().toString(36).substr(2, 5) };
+            proceedInit();
+        }
 
-        const updateStats = () => {
-            let profit = 0;
-            let holds = {};
-            transactions.forEach(t => {
-                const raw = t.price * t.amount;
-                const fee = (t.type === 'buy') ? Math.max(20, Math.floor(raw * 0.001425)) : (Math.max(20, Math.floor(raw * 0.001425)) + Math.floor(raw * 0.003));
-                profit += (t.type === 'buy' ? -(raw + fee) : (raw - fee));
-                holds[t.name] = (holds[t.name] || 0) + (t.type === 'buy' ? t.amount : -t.amount);
+        function proceedInit() {
+            if (!currentSyncId) {
+                currentSyncId = user.uid.substring(0, 8);
+                localStorage.setItem('user_sync_code', currentSyncId);
+            }
+            document.getElementById('sync-code-display').innerText = currentSyncId;
+            startSync();
+            document.getElementById('loader').classList.add('hidden');
+            updateUI();
+        }
+
+        function startSync() {
+            if (unsubscribe) unsubscribe();
+            if (!currentSyncId || !db) return;
+
+            const colRef = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
+            unsubscribe = onSnapshot(colRef, (snap) => {
+                transactions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+                updateUI();
+            }, (err) => {
+                console.error("同步錯誤:", err);
+                showToast("雲端同步連線中斷");
             });
-            document.getElementById('total-profit').innerText = `$${Math.round(profit).toLocaleString()}`;
-            const hList = Object.keys(holds).filter(k => holds[k] > 0);
-            document.getElementById('current-holdings-list').innerHTML = hList.length ? hList.map(k => `<span class="bg-purple-50 text-purple-600 px-2 py-1 rounded-md border border-purple-100">${k} (${holds[k]})</span>`).join('') : '<span class="text-gray-400 italic">無持股</span>';
+        }
+
+        function updateUI() {
+            renderCalendar();
+            updateStats();
+            renderList();
+            renderQuickTags();
+        }
+
+        // 新增功能：生成常用股名點選標籤
+        function renderQuickTags() {
+            const tagContainer = document.getElementById('quick-stock-tags');
+            if (!tagContainer) return;
+            
+            // 從交易紀錄中提取所有不重複的股名
+            const existingNames = [...new Set(transactions.map(t => (t.name || "").trim()))].filter(n => n !== "" && n !== "未命名");
+            
+            if (existingNames.length === 0) {
+                tagContainer.innerHTML = '<span class="text-[10px] text-gray-400 italic">尚未有常用股名</span>';
+                return;
+            }
+
+            tagContainer.innerHTML = existingNames.map(name => 
+                `<span onclick="selectStock('${name}')" class="stock-tag bg-gray-100 text-gray-600 px-2 py-1 rounded text-[10px] border border-gray-200 font-medium">${name}</span>`
+            ).join('');
+        }
+
+        // 全域函數供點選使用
+        window.selectStock = (name) => {
+            const input = document.getElementById('stock-name');
+            input.value = name;
+            input.classList.add('ring-2', 'ring-blue-400');
+            setTimeout(() => input.classList.remove('ring-2', 'ring-blue-400'), 500);
         };
 
-        const renderCalendar = () => {
+        function calculateTotalWithFees(price, amount, type) {
+            const rawSubtotal = price * amount;
+            let fee = 0;
+            if (type === 'buy') {
+                fee = Math.max(20, Math.floor(rawSubtotal * 0.001425));
+                return { raw: rawSubtotal, fee: fee, final: rawSubtotal + fee };
+            } else {
+                fee = Math.max(20, Math.floor(rawSubtotal * 0.003));
+                return { raw: rawSubtotal, fee: fee, final: rawSubtotal - fee };
+            }
+        }
+
+        function renderCalendar() {
             const body = document.getElementById('calendar-body');
             const display = document.getElementById('current-month-display');
+            if (!body) return;
+
             body.innerHTML = '';
-            const y = currentMonth.getFullYear(), m = currentMonth.getMonth();
+            const y = currentMonth.getFullYear();
+            const m = currentMonth.getMonth();
             display.innerText = `${y}年 ${m + 1}月`;
+
             const first = new Date(y, m, 1).getDay();
             const days = new Date(y, m + 1, 0).getDate();
 
-            for (let i = 0; i < first; i++) body.innerHTML += '<div class="calendar-day bg-gray-50/30"></div>';
+            for (let i = 0; i < first; i++) {
+                const e = document.createElement('div');
+                e.className = 'calendar-day bg-gray-50/50';
+                body.appendChild(e);
+            }
+
             for (let d = 1; d <= days; d++) {
-                const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const dateStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                 const div = document.createElement('div');
-                div.className = 'calendar-day p-2 flex flex-col hover:bg-blue-50';
+                div.className = 'calendar-day p-2 flex flex-col items-start hover:bg-blue-50 cursor-pointer overflow-hidden';
+                
                 div.onclick = () => {
-                    document.getElementById('trade-form').reset();
+                    const form = document.getElementById('trade-form');
+                    form.reset();
                     document.getElementById('selected-date').value = dateStr;
-                    document.getElementById('modal-title').innerText = `${dateStr} 記錄`;
+                    document.getElementById('modal-title').innerText = `${dateStr} 新增交易`;
+                    document.getElementById('subtotal-display').innerText = '$0';
+                    document.getElementById('raw-subtotal').innerText = '$0';
+                    document.getElementById('fee-display').innerText = '$0';
+                    document.getElementById('submit-btn').disabled = false;
                     document.getElementById('modal').classList.remove('hidden');
+                    renderQuickTags(); // 打開時更新一次標籤
                 };
-                div.innerHTML = `<span class="text-[10px] font-bold text-gray-300">${d}</span>`;
-                const dayTrades = transactions.filter(t => t.date === dateStr);
-                if (dayTrades.length) {
+
+                div.innerHTML = `<span class="text-xs font-bold text-gray-400 mb-1">${d}</span>`;
+                
+                const dayTrans = transactions.filter(t => t.date === dateStr);
+                if (dayTrans.length > 0) {
                     let flow = 0;
-                    dayTrades.forEach(t => {
-                        const r = t.price * t.amount;
-                        const f = (t.type === 'buy') ? Math.max(20, Math.floor(r * 0.001425)) : (Math.max(20, Math.floor(r * 0.001425)) + Math.floor(r * 0.003));
-                        flow += (t.type === 'buy' ? -(r+f) : (r-f));
+                    dayTrans.forEach(t => {
+                        const result = calculateTotalWithFees(t.price, t.amount, t.type);
+                        flow += (t.type === 'buy' ? -result.final : result.final);
                     });
-                    div.innerHTML += `<div class="mt-auto text-[9px] font-black text-center py-0.5 rounded ${flow>=0?'bg-red-50 text-red-500':'bg-green-50 text-green-600'}">${flow>=0?'+':''}${Math.round(flow)}</div>`;
+                    div.innerHTML += `<div class="text-[10px] font-bold px-1 py-0.5 rounded w-full truncate ${flow >= 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}">${flow >= 0 ? '+' : ''}${Math.round(flow).toLocaleString()}</div>`;
                 }
                 body.appendChild(div);
             }
+        }
+
+        function updateStats() {
+            let totalProfit = 0;
+            let inv = {};
+            transactions.forEach(t => {
+                const result = calculateTotalWithFees(t.price, t.amount, t.type);
+                const name = (t.name || "未命名").trim();
+                if (t.type === 'buy') {
+                    totalProfit -= result.final;
+                    inv[name] = (inv[name] || 0) + (parseInt(t.amount) || 0);
+                } else {
+                    totalProfit += result.final;
+                    inv[name] = (inv[name] || 0) - (parseInt(t.amount) || 0);
+                }
+            });
+            document.getElementById('total-profit').innerText = `$${Math.round(totalProfit).toLocaleString()}`;
+            const list = document.getElementById('current-holdings-list');
+            const stocks = Object.keys(inv).filter(k => inv[k] > 0);
+            list.innerHTML = stocks.length ? stocks.map(s => `<span class="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-bold">${s} (${inv[s]})</span>`).join('') : '<span class="text-gray-400 text-sm italic">尚無持股</span>';
+        }
+
+        function renderList() {
+            const container = document.getElementById('stock-list-container');
+            if (!container) return;
+            if (!transactions.length) {
+                container.innerHTML = '<p class="text-gray-400 text-center py-4">目前尚無交易明細</p>';
+                return;
+            }
+            
+            const grouped = transactions.reduce((acc, t) => {
+                const n = (t.name || "未命名").trim();
+                acc[n] = acc[n] || [];
+                acc[n].push(t);
+                return acc;
+            }, {});
+
+            container.innerHTML = Object.keys(grouped).map(name => {
+                const trades = grouped[name];
+                const prices = trades.map(t => parseFloat(t.price));
+                const maxPrice = Math.max(...prices);
+                const minPrice = Math.min(...prices);
+                
+                let stockProfit = 0;
+                trades.forEach(t => {
+                    const result = calculateTotalWithFees(t.price, t.amount, t.type);
+                    stockProfit += (t.type === 'buy' ? -result.final : result.final);
+                });
+
+                return `
+                <div class="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between mb-2 border-b border-gray-50 pb-2 gap-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-lg font-bold text-blue-600">${name}</span>
+                            <div class="flex gap-1">
+                                <span class="text-[10px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded border border-red-100">高: ${maxPrice}</span>
+                                <span class="text-[10px] bg-green-50 text-green-600 px-1.5 py-0.5 rounded border border-green-100">低: ${minPrice}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs font-bold ${stockProfit >= 0 ? 'text-red-500' : 'text-green-600'}">
+                                累計損益: ${stockProfit >= 0 ? '+' : ''}${Math.round(stockProfit).toLocaleString()}
+                            </span>
+                            <span class="text-[10px] text-gray-400">${trades.length} 筆紀錄</span>
+                        </div>
+                    </div>
+                    <div class="text-xs space-y-1 pt-1">
+                        ${trades.map(t => {
+                            const result = calculateTotalWithFees(t.price, t.amount, t.type);
+                            return `<div class="flex justify-between hover:bg-gray-50 p-1 rounded">
+                                <span class="text-gray-500">${t.date} <b class="${t.type==='buy'?'text-red-500':'text-green-600'}">${t.type==='buy'?'買入':'賣出'}</b></span>
+                                <div class="flex flex-col items-end">
+                                    <span class="font-mono">$${t.price} &times; ${t.amount}</span>
+                                    <span class="text-[9px] text-gray-400">(含手續費: $${result.fee})</span>
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>
+            `;}).join('');
+        }
+
+        window.calculateSubtotal = () => {
+            const price = parseFloat(document.getElementById('trade-price').value) || 0;
+            const amount = parseInt(document.getElementById('trade-amount').value) || 0;
+            const type = document.getElementById('trade-type').value;
+            const result = calculateTotalWithFees(price, amount, type);
+            document.getElementById('raw-subtotal').innerText = `$${Math.round(result.raw).toLocaleString()}`;
+            document.getElementById('fee-display').innerText = `$${result.fee}`;
+            const display = document.getElementById('subtotal-display');
+            display.innerText = `$${Math.round(result.final).toLocaleString()}`;
+            display.className = `text-xl font-bold ${type === 'buy' ? 'text-red-500' : 'text-green-600'}`;
         };
 
-        const renderList = () => {
-            const container = document.getElementById('stock-list-container');
-            if (transactions.length === 0) { container.innerHTML = '<p class="text-center text-gray-400 text-xs py-4">尚無交易紀錄</p>'; return; }
-            const sorted = [...transactions].sort((a,b) => b.ts - a.ts).slice(0, 10);
-            container.innerHTML = sorted.map(t => `
-                <div class="flex justify-between items-center text-xs p-2 bg-gray-50 rounded-lg">
-                    <div>
-                        <span class="font-bold ${t.type==='buy'?'text-blue-600':'text-orange-600'}">${t.type==='buy'?'買入':'賣出'}</span>
-                        <span class="ml-2 font-bold text-gray-700">${t.name}</span>
-                    </div>
-                    <div class="text-gray-400">${t.date} · $${t.price} &times; ${t.amount}</div>
-                </div>
-            `).join('');
+        window.changeMonth = (d) => { currentMonth.setMonth(currentMonth.getMonth() + d); updateUI(); };
+        window.closeModal = () => {
+            document.getElementById('modal').classList.add('hidden');
+            document.getElementById('submit-btn').disabled = false;
+        };
+        window.openSyncModal = () => {
+            document.getElementById('sync-input').value = currentSyncId;
+            document.getElementById('sync-modal').classList.remove('hidden');
+        };
+        window.closeSyncModal = () => document.getElementById('sync-modal').classList.add('hidden');
+        window.saveSyncCode = () => {
+            const val = document.getElementById('sync-input').value.trim();
+            if (val) {
+                currentSyncId = val;
+                localStorage.setItem('user_sync_code', val);
+                document.getElementById('sync-code-display').innerText = val;
+                startSync();
+                closeSyncModal();
+                showToast("同步帳號切換成功");
+            }
         };
 
         document.getElementById('trade-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const trade = {
-                date: document.getElementById('selected-date').value,
-                name: document.getElementById('stock-name').value,
-                type: document.getElementById('trade-type').value,
-                price: parseFloat(document.getElementById('trade-price').value),
-                amount: parseInt(document.getElementById('trade-amount').value),
-                ts: Date.now(),
-                synced: false
-            };
-            transactions.push(trade);
-            render();
-            closeModal();
-            showToast("交易已儲存至本地");
+            if (!db) { 
+                showToast("目前處於離線模式");
+                return; 
+            }
             
-            // 嘗試推送到雲端
-            if (db) {
-                try {
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `sync_local`), {...trade, synced: true});
-                } catch (e) {}
+            const btn = document.getElementById('submit-btn');
+            if (btn.disabled) return;
+            btn.disabled = true;
+            btn.innerText = "儲存中...";
+
+            try {
+                const col = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
+                await addDoc(col, {
+                    date: document.getElementById('selected-date').value,
+                    name: document.getElementById('stock-name').value.trim() || "未命名",
+                    type: document.getElementById('trade-type').value,
+                    price: parseFloat(document.getElementById('trade-price').value) || 0,
+                    amount: parseInt(document.getElementById('trade-amount').value) || 0,
+                    ts: Date.now(),
+                    createdAt: serverTimestamp()
+                });
+                
+                showToast("✅ 已成功儲存雲端紀錄");
+                
+                setTimeout(() => {
+                    closeModal();
+                    btn.innerText = "確認並儲存紀錄";
+                    btn.disabled = false;
+                }, 300);
+
+            } catch (err) { 
+                console.error("儲存失敗:", err);
+                showToast("❌ 雲端儲存失敗"); 
+                btn.disabled = false;
+                btn.innerText = "確認並儲存紀錄";
             }
         });
 
-        window.changeMonth = (v) => { currentMonth.setMonth(currentMonth.getMonth() + v); render(); };
-        window.closeModal = () => document.getElementById('modal').classList.add('hidden');
-
-        // 啟動流程
-        render();
-        // 嘗試背景連線
-        tryConnectCloud();
-        // 5秒後再試一次（處理注入延遲）
-        setTimeout(tryConnectCloud, 5000);
+        init();
     </script>
 </body>
 </html>
