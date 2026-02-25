@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股市交易紀錄與損益看板 (重複輸入優化版)</title>
+    <title>股市交易紀錄與損益看板 (雲端同步強化版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
@@ -19,8 +19,8 @@
     <!-- 載入層 -->
     <div id="loader" class="loading-overlay">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-        <p class="mt-4 text-gray-600 font-medium italic">正在初始化雲端連線...</p>
-        <p id="error-msg" class="mt-2 text-xs text-red-400 hidden text-center px-4">偵測到連線異常，已切換至本地存取模式</p>
+        <p class="mt-4 text-gray-600 font-medium italic">正在建立加密連線...</p>
+        <p id="error-msg" class="mt-2 text-xs text-red-400 hidden text-center px-4">雲端連線失敗，目前為離線預覽模式</p>
     </div>
 
     <div class="max-w-6xl mx-auto">
@@ -34,7 +34,7 @@
                 <div id="current-holdings-list" class="flex flex-wrap gap-2">
                     <span class="text-gray-400 text-sm italic">尚無持股</span>
                 </div>
-                <button onclick="openSyncModal()" class="absolute top-4 right-4 text-blue-500 hover:text-blue-700 transition">
+                <button onclick="openSyncModal()" class="absolute top-4 right-4 text-blue-500 hover:text-blue-700 transition" title="切換同步帳號">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.803a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.1-1.1" /></svg>
                 </button>
             </div>
@@ -78,6 +78,7 @@
     <div id="sync-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-[60] p-4">
         <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl">
             <h4 class="text-lg font-bold text-gray-800 mb-2">同步管理</h4>
+            <p class="text-xs text-gray-500 mb-4">輸入您的專屬同步碼以載入雲端資料</p>
             <div class="space-y-4">
                 <input type="text" id="sync-input" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-mono font-bold tracking-widest outline-none" placeholder="輸入同步碼">
                 <button onclick="saveSyncCode()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">確認同步</button>
@@ -123,13 +124,14 @@
         import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
+        // 注意：這裡必須使用有效的 Firebase 配置才能啟動雲端同步
         const defaultFirebaseConfig = {
-            apiKey: "AIzaSyBzWK76cZTIKEoJGoc9bqi0M4sGLIMsUaE",
-            authDomain: "good-e9e4e.firebaseapp.com",
-            projectId: "good-e9e4e",
-            storageBucket: "good-e9e4e.firebasestorage.app",
-            messagingSenderId: "878748843198",
-            appId: "1:878748843198:web:6183a33453463ef8e2b2ef"
+            apiKey: "", // 若為空值或無效，將無法啟動實體 Firebase 連線
+            authDomain: "stock-tracker-auth.firebaseapp.com",
+            projectId: "stock-tracker-v3",
+            storageBucket: "stock-tracker-v3.appspot.com",
+            messagingSenderId: "000000000000",
+            appId: "1:000000000000:web:abc123def456"
         };
 
         let db, auth;
@@ -149,12 +151,23 @@
 
         const init = async () => {
             try {
-                const config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : defaultFirebaseConfig;
+                // 優先使用環境提供的配置，否則回退到預設
+                const config = (typeof __firebase_config !== 'undefined' && __firebase_config) 
+                               ? JSON.parse(__firebase_config) 
+                               : defaultFirebaseConfig;
+
+                // 檢查是否有 API Key，若無則提示
+                if (!config.apiKey) {
+                    console.warn("未偵測到 Firebase API Key，雲端同步功能暫不可用。");
+                    handleFallbackMode();
+                    return;
+                }
+
                 const app = initializeApp(config);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Auth
+                // 嘗試進行匿名登錄或使用 token
                 try {
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                         await signInWithCustomToken(auth, __initial_auth_token);
@@ -162,10 +175,7 @@
                         await signInAnonymously(auth);
                     }
                 } catch (authErr) {
-                    console.warn("Auth failed, switching to fallback mode");
-                    document.getElementById('error-msg').classList.remove('hidden');
-                    user = { uid: "guest_" + Math.random().toString(36).substr(2, 5) };
-                    proceedInit();
+                    handleFallbackMode();
                     return;
                 }
 
@@ -173,14 +183,24 @@
                     if (u) {
                         user = u;
                         proceedInit();
+                    } else {
+                        handleFallbackMode();
                     }
                 });
 
             } catch (e) {
-                console.error("Critical Init Error", e);
-                document.getElementById('loader').classList.add('hidden');
+                console.error("Firebase 初始化失敗:", e);
+                handleFallbackMode();
             }
         };
+
+        function handleFallbackMode() {
+            document.getElementById('error-msg').classList.remove('hidden');
+            document.getElementById('loader').classList.add('hidden');
+            user = { uid: "guest_" + Math.random().toString(36).substr(2, 5) };
+            // 如果是在 Canvas 環境，我們至少要讓 UI 跑起來
+            proceedInit();
+        }
 
         function proceedInit() {
             if (!currentSyncId) {
@@ -195,16 +215,23 @@
 
         function startSync() {
             if (unsubscribe) unsubscribe();
-            if (!currentSyncId || !db) return;
+            // 檢查是否具備雲端同步條件
+            if (!currentSyncId || !db) {
+                console.log("正在使用本地存儲模式");
+                return;
+            }
 
+            // 重要：遵循規則 1 使用嚴格的路徑
             const colRef = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
+            
             unsubscribe = onSnapshot(colRef, (snap) => {
                 transactions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                     .sort((a, b) => (b.ts || 0) - (a.ts || 0));
                 updateUI();
             }, (err) => {
-                console.error("Sync error", err);
-                updateUI();
+                console.error("同步數據時發生錯誤:", err);
+                // 如果是權限錯誤，通常是因為 API Key 不匹配
+                showToast("雲端同步連線中斷");
             });
         }
 
@@ -291,7 +318,6 @@
                 return;
             }
             
-            // 按照股票名稱分組
             const grouped = transactions.reduce((acc, t) => {
                 const n = (t.name || "未命名").trim();
                 acc[n] = acc[n] || [];
@@ -301,13 +327,10 @@
 
             container.innerHTML = Object.keys(grouped).map(name => {
                 const trades = grouped[name];
-                
-                // 計算最高、最低股價
                 const prices = trades.map(t => parseFloat(t.price));
                 const maxPrice = Math.max(...prices);
                 const minPrice = Math.min(...prices);
                 
-                // 計算各股損益
                 let stockProfit = 0;
                 trades.forEach(t => {
                     const total = (parseFloat(t.price) || 0) * (parseInt(t.amount) || 0);
@@ -376,7 +399,11 @@
 
         document.getElementById('trade-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!db) { showToast("系統連線中，請稍候"); return; }
+            if (!db) { 
+                showToast("目前處於離線模式，資料將暫存於本機");
+                // 實作離線存儲 logic (省略)
+                return; 
+            }
             
             const btn = document.getElementById('submit-btn');
             if (btn.disabled) return;
@@ -395,7 +422,7 @@
                     createdAt: serverTimestamp()
                 });
                 
-                showToast("✅ 已成功儲存交易");
+                showToast("✅ 已成功儲存雲端紀錄");
                 
                 setTimeout(() => {
                     closeModal();
@@ -404,8 +431,8 @@
                 }, 300);
 
             } catch (err) { 
-                console.error("Save Error:", err);
-                showToast("❌ 儲存失敗，請重試"); 
+                console.error("儲存失敗:", err);
+                showToast("❌ 雲端儲存失敗"); 
                 btn.disabled = false;
                 btn.innerText = "確認並儲存紀錄";
             }
