@@ -3,394 +3,265 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股市交易紀錄與損益看板 - 雲端同步版</title>
+    <title>股市交易紀錄與損益看板</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
         body { font-family: 'Noto Sans TC', sans-serif; background-color: #f3f4f6; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
-        .calendar-day { min-height: 110px; transition: all 0.2s; border-right: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7; }
+        .calendar-day { min-height: 100px; transition: all 0.2s; border-right: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7; }
         .calendar-day:hover { background-color: #f9fafb; cursor: pointer; }
         .custom-shadow { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.95); display: flex; align-items: center; justify-content: center; z-index: 100; flex-direction: column; }
         .stock-chip { cursor: pointer; transition: all 0.2s; }
-        .stock-chip:hover { transform: translateY(-1px); }
     </style>
 </head>
 <body class="p-4 md:p-8 pb-20">
-    <!-- 讀取遮罩 -->
-    <div id="loader" class="loading-overlay">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        <p class="mt-4 text-gray-600 font-medium italic">正在初始化雲端連線...</p>
-        <p id="error-fallback-msg" class="mt-2 text-xs text-red-400 hidden">連線超時，請檢查預覽環境配置</p>
-    </div>
-
     <div class="max-w-6xl mx-auto">
-        <!-- 頂部數據看板 -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-blue-500 flex flex-col justify-center">
-                <p class="text-sm text-gray-500 font-medium">累積總損益 (已扣手續費/稅)</p>
-                <h2 id="total-profit" class="text-4xl font-bold mt-1 text-gray-800">$0</h2>
+        <!-- 看板區 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-blue-500">
+                <p class="text-xs text-gray-500 font-bold mb-1">累積總損益</p>
+                <h2 id="total-profit" class="text-3xl font-bold text-gray-800">$0</h2>
             </div>
-            <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-purple-500 relative">
-                <p class="text-sm text-gray-500 font-medium mb-2">目前持有股票</p>
-                <div id="current-holdings-list" class="flex flex-wrap gap-2">
-                    <span class="text-gray-400 text-sm italic">正在讀取...</span>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-purple-500 relative">
+                <p class="text-xs text-gray-500 font-bold mb-2">目前持股</p>
+                <div id="current-holdings-list" class="flex flex-wrap gap-2 text-sm">
+                    <span class="text-gray-400 italic">無數據</span>
                 </div>
-                <button onclick="openSyncModal()" class="absolute top-4 right-4 text-blue-500 hover:text-blue-700 transition" title="切換同步帳號">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.803a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.1-1.1" /></svg>
-                </button>
             </div>
         </div>
 
         <!-- 月份切換 -->
         <div class="bg-white rounded-t-2xl p-4 flex justify-between items-center border-b">
-            <button onclick="changeMonth(-1)" class="p-2 hover:bg-gray-100 rounded-full transition">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+            <button onclick="changeMonth(-1)" class="p-2 hover:bg-gray-100 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
             </button>
-            <h3 id="current-month-display" class="text-xl font-bold text-gray-700">正在載入...</h3>
-            <button onclick="changeMonth(1)" class="p-2 hover:bg-gray-100 rounded-full transition">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+            <h3 id="current-month-display" class="font-bold text-gray-700">載入中...</h3>
+            <button onclick="changeMonth(1)" class="p-2 hover:bg-gray-100 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
             </button>
         </div>
 
-        <!-- 行事曆 -->
-        <div class="bg-white rounded-b-2xl custom-shadow overflow-hidden mb-8">
+        <!-- 行事曆主體 -->
+        <div class="bg-white rounded-b-2xl custom-shadow overflow-hidden mb-6">
             <div class="calendar-grid bg-gray-50 border-b">
-                <div class="py-3 text-center text-xs font-bold text-gray-400">日</div>
-                <div class="py-3 text-center text-xs font-bold text-gray-400">一</div>
-                <div class="py-3 text-center text-xs font-bold text-gray-400">二</div>
-                <div class="py-3 text-center text-xs font-bold text-gray-400">三</div>
-                <div class="py-3 text-center text-xs font-bold text-gray-400">四</div>
-                <div class="py-3 text-center text-xs font-bold text-gray-400">五</div>
-                <div class="py-3 text-center text-xs font-bold text-gray-400">六</div>
+                <div class="py-2 text-center text-[10px] font-bold text-gray-400">日</div>
+                <div class="py-2 text-center text-[10px] font-bold text-gray-400">一</div>
+                <div class="py-2 text-center text-[10px] font-bold text-gray-400">二</div>
+                <div class="py-2 text-center text-[10px] font-bold text-gray-400">三</div>
+                <div class="py-2 text-center text-[10px] font-bold text-gray-400">四</div>
+                <div class="py-2 text-center text-[10px] font-bold text-gray-400">五</div>
+                <div class="py-2 text-center text-[10px] font-bold text-gray-400">六</div>
             </div>
             <div id="calendar-body" class="calendar-grid"></div>
         </div>
 
-        <!-- 歷史交易清單 -->
-        <div class="bg-white rounded-2xl custom-shadow p-6">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="text-xl font-bold text-gray-800">歷史交易明細</h3>
-                <div class="text-[10px] text-gray-400">同步碼: <span id="sync-code-display" class="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600 italic">驗證中...</span></div>
+        <!-- 狀態與資訊 -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div class="flex justify-between items-center">
+                <h3 class="font-bold text-gray-700">交易紀錄</h3>
+                <div id="cloud-status" class="text-[10px] flex items-center gap-1 px-2 py-1 rounded bg-gray-100 text-gray-500">
+                    <span class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+                    等待雲端配置中...
+                </div>
             </div>
-            <div id="stock-list-container" class="space-y-4">
-                <p class="text-gray-400 text-center py-4">正在獲取數據...</p>
-            </div>
+            <div id="stock-list-container" class="mt-4 space-y-2"></div>
         </div>
     </div>
 
     <!-- 交易 Modal -->
-    <div id="modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
-            <div class="flex justify-between items-center mb-4">
-                <h4 id="modal-title" class="text-lg font-bold text-gray-800">新增交易</h4>
-                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+    <div id="modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h4 id="modal-title" class="font-bold">記錄交易</h4>
+                <button onclick="closeModal()" class="text-gray-400 text-xl">&times;</button>
             </div>
-            
             <form id="trade-form" class="space-y-4">
                 <input type="hidden" id="selected-date">
-                
-                <div class="space-y-2">
-                    <label class="text-xs font-bold text-gray-500 uppercase">股票名稱</label>
-                    <div id="stock-chips" class="flex flex-wrap gap-2 mb-2"></div>
-                    <input type="text" id="stock-name" required 
-                        class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" 
-                        placeholder="輸入股名"
-                        autocomplete="off">
+                <div>
+                    <label class="text-[10px] font-bold text-gray-400 uppercase">股名</label>
+                    <input type="text" id="stock-name" required class="w-full bg-gray-50 border-none rounded-lg p-3 mt-1 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                 </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="space-y-2">
-                        <label class="text-xs font-bold text-gray-500 uppercase">類型</label>
-                        <select id="trade-type" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" onchange="calculateSubtotal()">
-                            <option value="buy">買進 (+)</option>
-                            <option value="sell">賣出 (-)</option>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase">類型</label>
+                        <select id="trade-type" class="w-full bg-gray-50 border-none rounded-lg p-3 mt-1 text-sm">
+                            <option value="buy">買進</option>
+                            <option value="sell">賣出</option>
                         </select>
                     </div>
-                    <div class="space-y-2">
-                        <label class="text-xs font-bold text-gray-500 uppercase">單價</label>
-                        <input type="number" step="0.01" id="trade-price" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="0.00" oninput="calculateSubtotal()">
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase">單價</label>
+                        <input type="number" step="0.01" id="trade-price" required class="w-full bg-gray-50 border-none rounded-lg p-3 mt-1 text-sm">
                     </div>
                 </div>
-
-                <div class="space-y-2">
-                    <label class="text-xs font-bold text-gray-500 uppercase">股數</label>
-                    <input type="number" id="trade-amount" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="1000" oninput="calculateSubtotal()">
+                <div>
+                    <label class="text-[10px] font-bold text-gray-400 uppercase">股數</label>
+                    <input type="number" id="trade-amount" required class="w-full bg-gray-50 border-none rounded-lg p-3 mt-1 text-sm">
                 </div>
-                
-                <div class="bg-blue-50 rounded-xl p-4 space-y-2 border border-blue-100">
-                    <div class="flex justify-between items-center text-xs text-blue-600">
-                        <span>成交額: <span id="raw-subtotal">$0</span></span>
-                        <span>手續費/稅: <span id="fee-display">$0</span></span>
-                    </div>
-                    <div class="flex justify-between items-center border-t border-blue-100 pt-2">
-                        <span class="text-blue-800 text-sm font-medium">結算金額</span>
-                        <span id="subtotal-display" class="text-xl font-bold text-blue-700">$0</span>
-                    </div>
-                </div>
-
-                <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 transition shadow-lg">儲存交易</button>
+                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-blue-700 transition">確認儲存</button>
             </form>
         </div>
     </div>
 
-    <!-- 同步 Modal -->
-    <div id="sync-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-[60] p-4">
-        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl">
-            <h4 class="text-lg font-bold text-gray-800 mb-2">同步管理</h4>
-            <input type="text" id="sync-input" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-mono mb-4" placeholder="同步碼">
-            <button onclick="saveSyncCode()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl">確認</button>
-            <button onclick="closeSyncModal()" class="w-full text-gray-400 text-sm mt-2">取消</button>
-        </div>
-    </div>
-
-    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full text-sm font-medium shadow-xl hidden z-[100]"></div>
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full text-xs font-medium hidden z-[100]"></div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, setDoc, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        let db, auth;
-        let transactions = [];
-        let stockOptions = ['台積電', '鴻海', '聯發科', '長榮']; 
+        let db = null;
+        let transactions = JSON.parse(localStorage.getItem('local_stock_trades') || '[]');
         let currentMonth = new Date();
-        let user = null;
-        let currentSyncId = localStorage.getItem('user_sync_code');
-        let unsubscribe = null;
-        let unsubscribeOptions = null;
 
         const showToast = (msg) => {
             const t = document.getElementById('toast');
-            if (t) {
-                t.innerText = msg;
-                t.classList.remove('hidden');
-                setTimeout(() => t.classList.add('hidden'), 3000);
-            }
+            t.innerText = msg; t.classList.remove('hidden');
+            setTimeout(() => t.classList.add('hidden'), 2000);
         };
 
-        const init = async (retryCount = 0) => {
-            const config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-            if (!config) {
-                if (retryCount < 5) {
-                    console.log("正在等待環境變數...");
-                    setTimeout(() => init(retryCount + 1), 1000);
-                    return;
-                }
-                console.error("無法取得 Firebase 配置");
-                document.getElementById('error-fallback-msg').classList.remove('hidden');
-                return;
-            }
+        // 背景監測配置注入
+        const tryConnectCloud = async () => {
+            const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+            if (!configStr) return false;
 
             try {
+                const config = JSON.parse(configStr);
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                 const app = initializeApp(config);
                 db = getFirestore(app);
-                auth = getAuth(app);
-
-                // 強制執行認證
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-
-                onAuthStateChanged(auth, (u) => {
-                    if (u) {
-                        user = u;
-                        if (!currentSyncId) {
-                            currentSyncId = user.uid.substring(0, 8);
-                            localStorage.setItem('user_sync_code', currentSyncId);
+                const auth = getAuth(app);
+                
+                await signInAnonymously(auth);
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        const statusEl = document.getElementById('cloud-status');
+                        statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-green-500"></span> 雲端已同步 (${user.uid.substring(0,6)})`;
+                        statusEl.classList.replace('text-gray-500', 'text-green-600');
+                        
+                        // 同步本地數據到雲端（如果有）
+                        if (transactions.length > 0) {
+                            transactions.forEach(async (t) => {
+                                if (!t.synced) {
+                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `sync_${user.uid.substring(0,8)}`), {...t, synced: true});
+                                }
+                            });
                         }
-                        document.getElementById('sync-code-display').innerText = currentSyncId;
-                        startSync(appId);
-                        document.getElementById('loader').classList.add('hidden');
-                        updateUI();
                     }
                 });
-            } catch (error) {
-                console.error("連線錯誤:", error);
-                document.getElementById('error-fallback-msg').classList.remove('hidden');
+                return true;
+            } catch (e) {
+                console.warn("Cloud connection background attempt failed", e);
+                return false;
             }
         };
 
-        const startSync = (appId) => {
-            if (unsubscribe) unsubscribe();
-            if (unsubscribeOptions) unsubscribeOptions();
-            if (!user || !db) return;
-
-            const colRef = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
-            unsubscribe = onSnapshot(colRef, (snap) => {
-                transactions = snap.docs.filter(d => d.id !== 'meta_options').map(doc => ({ id: doc.id, ...doc.data() }))
-                    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
-                updateUI();
-            }, (err) => console.error("同步數據失敗:", err));
-
-            const optionsDoc = doc(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`, 'meta_options');
-            unsubscribeOptions = onSnapshot(optionsDoc, (docSnap) => {
-                if (docSnap.exists()) {
-                    stockOptions = docSnap.data().list || stockOptions;
-                    renderStockChips();
-                }
-            });
-        };
-
-        const renderStockChips = () => {
-            const container = document.getElementById('stock-chips');
-            if (!container) return;
-            container.innerHTML = stockOptions.map(name => `
-                <span class="stock-chip bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold border border-blue-200 hover:bg-blue-600 hover:text-white" 
-                      onclick="selectStock('${name}')">
-                    ${name}
-                </span>
-            `).join('');
-        };
-
-        window.selectStock = (name) => {
-            document.getElementById('stock-name').value = name;
-        };
-
-        window.calculateSubtotal = () => {
-            const price = parseFloat(document.getElementById('trade-price').value) || 0;
-            const amount = parseInt(document.getElementById('trade-amount').value) || 0;
-            const type = document.getElementById('trade-type').value;
-            const rawSubtotal = price * amount;
-            let fee = 0;
-            if (type === 'buy') {
-                fee = Math.max(20, Math.floor(rawSubtotal * 0.001425));
-            } else {
-                fee = Math.max(20, Math.floor(rawSubtotal * 0.001425)) + Math.floor(rawSubtotal * 0.003);
-            }
-            const final = (type === 'buy') ? (rawSubtotal + fee) : (rawSubtotal - fee);
-            document.getElementById('raw-subtotal').innerText = `$${Math.round(rawSubtotal).toLocaleString()}`;
-            document.getElementById('fee-display').innerText = `$${Math.round(fee).toLocaleString()}`;
-            document.getElementById('subtotal-display').innerText = `$${Math.round(final).toLocaleString()}`;
-        };
-
-        function updateUI() {
+        const render = () => {
             renderCalendar();
             renderList();
-            renderStockChips();
-            
+            updateStats();
+            localStorage.setItem('local_stock_trades', JSON.stringify(transactions));
+        };
+
+        const updateStats = () => {
             let profit = 0;
-            let currentInv = {};
+            let holds = {};
             transactions.forEach(t => {
                 const raw = t.price * t.amount;
                 const fee = (t.type === 'buy') ? Math.max(20, Math.floor(raw * 0.001425)) : (Math.max(20, Math.floor(raw * 0.001425)) + Math.floor(raw * 0.003));
-                const res = (t.type === 'buy') ? -(raw + fee) : (raw - fee);
-                profit += res;
-                currentInv[t.name] = (currentInv[t.name] || 0) + (t.type === 'buy' ? t.amount : -t.amount);
+                profit += (t.type === 'buy' ? -(raw + fee) : (raw - fee));
+                holds[t.name] = (holds[t.name] || 0) + (t.type === 'buy' ? t.amount : -t.amount);
             });
             document.getElementById('total-profit').innerText = `$${Math.round(profit).toLocaleString()}`;
-            const holdEl = document.getElementById('current-holdings-list');
-            const held = Object.keys(currentInv).filter(n => currentInv[n] > 0);
-            holdEl.innerHTML = held.length ? held.map(n => `<span class="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-bold">${n} (${currentInv[n]})</span>`).join('') : '<span class="text-gray-400 text-sm italic">尚無持股</span>';
-        }
+            const hList = Object.keys(holds).filter(k => holds[k] > 0);
+            document.getElementById('current-holdings-list').innerHTML = hList.length ? hList.map(k => `<span class="bg-purple-50 text-purple-600 px-2 py-1 rounded-md border border-purple-100">${k} (${holds[k]})</span>`).join('') : '<span class="text-gray-400 italic">無持股</span>';
+        };
 
-        function renderCalendar() {
+        const renderCalendar = () => {
             const body = document.getElementById('calendar-body');
             const display = document.getElementById('current-month-display');
             body.innerHTML = '';
-            const y = currentMonth.getFullYear();
-            const m = currentMonth.getMonth();
+            const y = currentMonth.getFullYear(), m = currentMonth.getMonth();
             display.innerText = `${y}年 ${m + 1}月`;
             const first = new Date(y, m, 1).getDay();
             const days = new Date(y, m + 1, 0).getDate();
 
-            for (let i = 0; i < first; i++) body.innerHTML += '<div class="calendar-day bg-gray-50/50"></div>';
+            for (let i = 0; i < first; i++) body.innerHTML += '<div class="calendar-day bg-gray-50/30"></div>';
             for (let d = 1; d <= days; d++) {
                 const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
                 const div = document.createElement('div');
-                div.className = 'calendar-day p-2 flex flex-col items-start hover:bg-blue-50 cursor-pointer overflow-hidden';
+                div.className = 'calendar-day p-2 flex flex-col hover:bg-blue-50';
                 div.onclick = () => {
                     document.getElementById('trade-form').reset();
                     document.getElementById('selected-date').value = dateStr;
-                    document.getElementById('modal-title').innerText = `${dateStr} 記錄交易`;
+                    document.getElementById('modal-title').innerText = `${dateStr} 記錄`;
                     document.getElementById('modal').classList.remove('hidden');
-                    calculateSubtotal();
                 };
-                div.innerHTML = `<span class="text-xs font-bold text-gray-400 mb-1">${d}</span>`;
-                const dayTrans = transactions.filter(t => t.date === dateStr);
-                if (dayTrans.length) {
-                    let dayFlow = 0;
-                    dayTrans.forEach(t => {
+                div.innerHTML = `<span class="text-[10px] font-bold text-gray-300">${d}</span>`;
+                const dayTrades = transactions.filter(t => t.date === dateStr);
+                if (dayTrades.length) {
+                    let flow = 0;
+                    dayTrades.forEach(t => {
                         const r = t.price * t.amount;
                         const f = (t.type === 'buy') ? Math.max(20, Math.floor(r * 0.001425)) : (Math.max(20, Math.floor(r * 0.001425)) + Math.floor(r * 0.003));
-                        dayFlow += (t.type === 'buy' ? -(r+f) : (r-f));
+                        flow += (t.type === 'buy' ? -(r+f) : (r-f));
                     });
-                    div.innerHTML += `<div class="text-[9px] font-bold px-1 py-0.5 rounded w-full truncate ${dayFlow>=0?'bg-red-50 text-red-600':'bg-green-50 text-green-700'}">${dayFlow>=0?'+':''}${Math.round(dayFlow).toLocaleString()}</div>`;
+                    div.innerHTML += `<div class="mt-auto text-[9px] font-black text-center py-0.5 rounded ${flow>=0?'bg-red-50 text-red-500':'bg-green-50 text-green-600'}">${flow>=0?'+':''}${Math.round(flow)}</div>`;
                 }
                 body.appendChild(div);
             }
-        }
+        };
 
-        function renderList() {
+        const renderList = () => {
             const container = document.getElementById('stock-list-container');
-            if (!transactions.length) { container.innerHTML = '<p class="text-gray-400 text-center py-4">尚無數據</p>'; return; }
-            const grouped = transactions.reduce((acc, t) => { acc[t.name] = acc[t.name] || []; acc[t.name].push(t); return acc; }, {});
-            container.innerHTML = Object.keys(grouped).map(name => {
-                const ts = grouped[name];
-                let p = 0;
-                ts.forEach(t => {
-                    const r = t.price * t.amount;
-                    const f = (t.type === 'buy') ? Math.max(20, Math.floor(r * 0.001425)) : (Math.max(20, Math.floor(r * 0.001425)) + Math.floor(r * 0.003));
-                    p += (t.type === 'buy' ? -(r+f) : (r-f));
-                });
-                return `
-                <div class="bg-white border rounded-xl p-4 shadow-sm">
-                    <div class="flex justify-between items-center border-b pb-2 mb-2">
-                        <span class="font-bold text-blue-600">${name}</span>
-                        <span class="text-xs ${p>=0?'text-red-500':'text-green-600'} font-bold">小計: ${Math.round(p).toLocaleString()}</span>
+            if (transactions.length === 0) { container.innerHTML = '<p class="text-center text-gray-400 text-xs py-4">尚無交易紀錄</p>'; return; }
+            const sorted = [...transactions].sort((a,b) => b.ts - a.ts).slice(0, 10);
+            container.innerHTML = sorted.map(t => `
+                <div class="flex justify-between items-center text-xs p-2 bg-gray-50 rounded-lg">
+                    <div>
+                        <span class="font-bold ${t.type==='buy'?'text-blue-600':'text-orange-600'}">${t.type==='buy'?'買入':'賣出'}</span>
+                        <span class="ml-2 font-bold text-gray-700">${t.name}</span>
                     </div>
-                    ${ts.map(t => `<div class="flex justify-between text-[11px] text-gray-500"><span>${t.date} ${t.type==='buy'?'買入':'賣出'}</span><span>$${t.price} &times; ${t.amount}</span></div>`).join('')}
-                </div>`;
-            }).join('');
-        }
+                    <div class="text-gray-400">${t.date} · $${t.price} &times; ${t.amount}</div>
+                </div>
+            `).join('');
+        };
 
         document.getElementById('trade-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const btn = document.getElementById('submit-btn');
-            const name = document.getElementById('stock-name').value.trim();
-            btn.disabled = true;
-
-            try {
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const col = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
-                await addDoc(col, {
-                    date: document.getElementById('selected-date').value,
-                    name: name,
-                    type: document.getElementById('trade-type').value,
-                    price: parseFloat(document.getElementById('trade-price').value) || 0,
-                    amount: parseInt(document.getElementById('trade-amount').value) || 0,
-                    ts: Date.now()
-                });
-
-                if (!stockOptions.includes(name)) {
-                    const newOptions = [...stockOptions, name];
-                    const optDoc = doc(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`, 'meta_options');
-                    await setDoc(optDoc, { list: newOptions });
-                }
-                showToast("已同步至雲端");
-                closeModal();
-            } catch (err) {
-                showToast("同步失敗");
-            } finally {
-                btn.disabled = false;
+            const trade = {
+                date: document.getElementById('selected-date').value,
+                name: document.getElementById('stock-name').value,
+                type: document.getElementById('trade-type').value,
+                price: parseFloat(document.getElementById('trade-price').value),
+                amount: parseInt(document.getElementById('trade-amount').value),
+                ts: Date.now(),
+                synced: false
+            };
+            transactions.push(trade);
+            render();
+            closeModal();
+            showToast("交易已儲存至本地");
+            
+            // 嘗試推送到雲端
+            if (db) {
+                try {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `sync_local`), {...trade, synced: true});
+                } catch (e) {}
             }
         });
 
-        window.changeMonth = (d) => { currentMonth.setMonth(currentMonth.getMonth() + d); updateUI(); };
+        window.changeMonth = (v) => { currentMonth.setMonth(currentMonth.getMonth() + v); render(); };
         window.closeModal = () => document.getElementById('modal').classList.add('hidden');
-        window.openSyncModal = () => document.getElementById('sync-modal').classList.remove('hidden');
-        window.closeSyncModal = () => document.getElementById('sync-modal').classList.add('hidden');
-        window.saveSyncCode = () => {
-            const v = document.getElementById('sync-input').value.trim();
-            if (v) { currentSyncId = v; localStorage.setItem('user_sync_code', v); document.getElementById('sync-code-display').innerText = v; init(); closeSyncModal(); }
-        };
 
-        init();
+        // 啟動流程
+        render();
+        // 嘗試背景連線
+        tryConnectCloud();
+        // 5秒後再試一次（處理注入延遲）
+        setTimeout(tryConnectCloud, 5000);
     </script>
 </body>
 </html>
