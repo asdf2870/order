@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股市交易紀錄與損益看板 (摺疊明細版)</title>
+    <title>小仙女紅盤衝衝 - 股市交易紀錄</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
@@ -21,6 +21,13 @@
         .stock-card.active .details-content { max-height: 1000px; transition: max-height 0.5s ease-in; }
         .stock-card.active .arrow-icon { transform: rotate(180deg); }
         .arrow-icon { transition: transform 0.3s; }
+        
+        /* 標題漸層效果 */
+        .header-title {
+            background: linear-gradient(135deg, #3b82f6 0%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8 pb-20">
@@ -32,6 +39,12 @@
     </div>
 
     <div class="max-w-6xl mx-auto">
+        <!-- 頂部大標題 -->
+        <div class="text-center mb-8">
+            <h1 class="header-title text-4xl md:text-5xl font-black tracking-widest drop-shadow-sm">小仙女紅盤衝衝</h1>
+            <div class="h-1 w-24 bg-gradient-to-r from-blue-400 to-pink-400 mx-auto mt-2 rounded-full opacity-50"></div>
+        </div>
+
         <!-- 頂部數據看板 -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-blue-500 flex flex-col justify-center">
@@ -216,7 +229,7 @@
                 transactions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                     .sort((a, b) => a.date.localeCompare(b.date) || (a.ts || 0) - (b.ts || 0));
                 updateUI();
-            });
+            }, (err) => console.error("Snapshot error:", err));
         }
 
         function calculateTotalWithFees(price, amount, type) {
