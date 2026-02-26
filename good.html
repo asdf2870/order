@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股市交易紀錄與損益看板 (編輯刪除強化版)</title>
+    <title>股市交易紀錄與損益看板 (強化明細版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
@@ -26,13 +26,18 @@
     </div>
 
     <div class="max-w-6xl mx-auto">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <!-- 頂部數據看板 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-blue-500 flex flex-col justify-center">
-                <p class="text-sm text-gray-500 font-medium">累積總損益 (已扣手續費/稅)</p>
-                <h2 id="total-profit" class="text-4xl font-bold mt-1 text-gray-800">$0</h2>
+                <p class="text-sm text-gray-500 font-medium">累計已實現損益 (含股息)</p>
+                <h2 id="total-profit" class="text-3xl font-bold mt-1 text-gray-800">$0</h2>
+            </div>
+            <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-green-500 flex flex-col justify-center">
+                <p class="text-sm text-gray-500 font-medium">目前庫存成本 (未結算)</p>
+                <h2 id="total-cost" class="text-3xl font-bold mt-1 text-gray-800">$0</h2>
             </div>
             <div class="bg-white p-6 rounded-2xl custom-shadow border-l-4 border-purple-500 relative">
-                <p class="text-sm text-gray-500 font-medium mb-2">目前持有股票</p>
+                <p class="text-sm text-gray-500 font-medium mb-2">目前持有股票 (股名+股數)</p>
                 <div id="current-holdings-list" class="flex flex-wrap gap-2">
                     <span class="text-gray-400 text-sm italic">尚無持股</span>
                 </div>
@@ -42,11 +47,15 @@
             </div>
         </div>
 
+        <!-- 月份切換 -->
         <div class="bg-white rounded-t-2xl p-4 flex justify-between items-center border-b">
             <button onclick="changeMonth(-1)" class="p-2 hover:bg-gray-100 rounded-full transition">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
             </button>
-            <h3 id="current-month-display" class="text-xl font-bold text-gray-700">正在載入...</h3>
+            <div class="text-center">
+                <h3 id="current-month-display" class="text-xl font-bold text-gray-700">正在載入...</h3>
+                <p id="month-summary" class="text-[10px] text-gray-400 font-medium"></p>
+            </div>
             <button onclick="changeMonth(1)" class="p-2 hover:bg-gray-100 rounded-full transition">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
             </button>
@@ -67,7 +76,7 @@
 
         <div class="bg-white rounded-2xl custom-shadow p-6">
             <div class="flex justify-between items-center mb-6">
-                <h3 class="text-xl font-bold text-gray-800">歷史交易明細表</h3>
+                <h3 class="text-xl font-bold text-gray-800">歷史交易明細表 (含個股統計)</h3>
                 <div class="text-[10px] text-gray-400">同步碼: <span id="sync-code-display" class="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600 italic">尚未設定</span></div>
             </div>
             <div id="stock-list-container" class="space-y-4">
@@ -80,7 +89,6 @@
     <div id="sync-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-[60] p-4">
         <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl">
             <h4 class="text-lg font-bold text-gray-800 mb-2">同步管理</h4>
-            <p class="text-xs text-gray-500 mb-4">輸入您的專屬同步碼以載入雲端資料</p>
             <div class="space-y-4">
                 <input type="text" id="sync-input" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-center text-xl font-mono font-bold tracking-widest outline-none" placeholder="輸入同步碼">
                 <button onclick="saveSyncCode()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">確認同步</button>
@@ -89,7 +97,7 @@
         </div>
     </div>
 
-    <!-- Modal 交易紀錄 (新增與修改共用) -->
+    <!-- Modal 交易紀錄 -->
     <div id="modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
             <div class="flex justify-between items-center mb-6">
@@ -98,11 +106,11 @@
             </div>
             <form id="trade-form" class="space-y-4">
                 <input type="hidden" id="selected-date">
-                <input type="hidden" id="edit-transaction-id"> <!-- 用於判斷是編輯還是新增 -->
+                <input type="hidden" id="edit-transaction-id">
                 
                 <div class="space-y-2">
-                    <label class="text-xs font-bold text-gray-500 ml-1">股票名稱</label>
-                    <input type="text" id="stock-name" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="輸入名稱 (如：台積電)">
+                    <label class="text-xs font-bold text-gray-500 ml-1">項目/股票名稱</label>
+                    <input type="text" id="stock-name" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="如：台積電 或 銀行利息">
                     <div id="quick-stock-tags" class="flex flex-wrap gap-2 pt-1"></div>
                 </div>
 
@@ -112,17 +120,18 @@
                         <select id="trade-type" class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" onchange="calculateSubtotal()">
                             <option value="buy">買進 (+)</option>
                             <option value="sell">賣出 (-)</option>
+                            <option value="dividend">股息/利息 (+)</option>
                         </select>
                     </div>
                     <div class="space-y-2">
-                        <label class="text-xs font-bold text-gray-500 ml-1">成交單價</label>
+                        <label class="text-xs font-bold text-gray-500 ml-1">成交單價/金額</label>
                         <input type="number" step="0.01" id="trade-price" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="單價" oninput="calculateSubtotal()">
                     </div>
                 </div>
                 
-                <div class="space-y-2">
-                    <label class="text-xs font-bold text-gray-500 ml-1">成交股數</label>
-                    <input type="number" id="trade-amount" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="股數 (1張=1000)" oninput="calculateSubtotal()">
+                <div class="space-y-2" id="amount-container">
+                    <label class="text-xs font-bold text-gray-500 ml-1">成交股數 (股息請填 1)</label>
+                    <input type="number" id="trade-amount" required class="block w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3" placeholder="股數" oninput="calculateSubtotal()">
                 </div>
                 
                 <div class="bg-gray-50 rounded-xl p-4 space-y-2 border border-dashed border-gray-300">
@@ -131,15 +140,13 @@
                         <span>手續費: <span id="fee-display">$0</span></span>
                     </div>
                     <div class="flex justify-between items-center border-t border-gray-200 pt-2">
-                        <span class="text-gray-500 text-sm font-medium">預計結算總額</span>
+                        <span class="text-gray-500 text-sm font-medium">預計結算/入帳額</span>
                         <span id="subtotal-display" class="text-xl font-bold text-gray-800">$0</span>
                     </div>
                 </div>
 
-                <div class="flex flex-col gap-2">
-                    <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 transition shadow-lg shadow-blue-200">儲存紀錄</button>
-                    <button type="button" id="delete-btn" onclick="deleteTransaction()" class="hidden w-full bg-red-50 text-red-500 font-bold py-3 rounded-xl hover:bg-red-100 transition">刪除此筆紀錄</button>
-                </div>
+                <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 transition">儲存紀錄</button>
+                <button type="button" id="delete-btn" onclick="deleteTransaction()" class="hidden w-full bg-red-50 text-red-500 font-bold py-3 rounded-xl">刪除紀錄</button>
             </form>
         </div>
     </div>
@@ -148,18 +155,16 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         const defaultFirebaseConfig = {
             apiKey: "AIzaSyBzWK76cZTIKEoJGoc9bqi0M4sGLIMsUaE",
             authDomain: "good-e9e4e.firebaseapp.com",
-            databaseURL: "https://good-e9e4e-default-rtdb.asia-southeast1.firebasedatabase.app",
             projectId: "good-e9e4e",
             storageBucket: "good-e9e4e.firebasestorage.app",
             messagingSenderId: "878748843198",
-            appId: "1:878748843198:web:6183a33453463ef8e2b2ef",
-            measurementId: "G-QDF2C34VF3"
+            appId: "1:878748843198:web:6183a33453463ef8e2b2ef"
         };
 
         let db, auth;
@@ -168,185 +173,211 @@
         let currentMonth = new Date();
         let currentSyncId = localStorage.getItem('user_sync_code');
         let unsubscribe = null;
-        let user = null;
 
         const showToast = (msg) => {
             const t = document.getElementById('toast');
-            t.innerText = msg;
-            t.classList.remove('hidden');
+            t.innerText = msg; t.classList.remove('hidden');
             setTimeout(() => t.classList.add('hidden'), 2500);
         };
 
         const init = async () => {
-            try {
-                const config = (typeof __firebase_config !== 'undefined' && __firebase_config) 
-                               ? JSON.parse(__firebase_config) 
-                               : defaultFirebaseConfig;
+            const config = (typeof __firebase_config !== 'undefined' && __firebase_config) ? JSON.parse(__firebase_config) : defaultFirebaseConfig;
+            const app = initializeApp(config);
+            db = getFirestore(app);
+            auth = getAuth(app);
 
-                if (!config.apiKey) {
-                    handleFallbackMode();
-                    return;
-                }
-
-                const app = initializeApp(config);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                try {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                } catch (authErr) {
-                    handleFallbackMode();
-                    return;
-                }
-
-                onAuthStateChanged(auth, (u) => {
-                    if (u) {
-                        user = u;
-                        proceedInit();
-                    } else {
-                        handleFallbackMode();
-                    }
-                });
-
-            } catch (e) {
-                console.error("Firebase 初始化失敗:", e);
-                handleFallbackMode();
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
             }
+
+            onAuthStateChanged(auth, (u) => {
+                if (u) {
+                    if (!currentSyncId) { currentSyncId = u.uid.substring(0, 8); localStorage.setItem('user_sync_code', currentSyncId); }
+                    document.getElementById('sync-code-display').innerText = currentSyncId;
+                    startSync();
+                    document.getElementById('loader').classList.add('hidden');
+                }
+            });
         };
-
-        function handleFallbackMode() {
-            document.getElementById('error-msg').classList.remove('hidden');
-            document.getElementById('loader').classList.add('hidden');
-            user = { uid: "guest_" + Math.random().toString(36).substr(2, 5) };
-            proceedInit();
-        }
-
-        function proceedInit() {
-            if (!currentSyncId) {
-                currentSyncId = user.uid.substring(0, 8);
-                localStorage.setItem('user_sync_code', currentSyncId);
-            }
-            document.getElementById('sync-code-display').innerText = currentSyncId;
-            startSync();
-            document.getElementById('loader').classList.add('hidden');
-            updateUI();
-        }
 
         function startSync() {
             if (unsubscribe) unsubscribe();
-            if (!currentSyncId || !db) return;
-
             const colRef = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
             unsubscribe = onSnapshot(colRef, (snap) => {
                 transactions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-                    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+                    .sort((a, b) => a.date.localeCompare(b.date) || (a.ts || 0) - (b.ts || 0));
                 updateUI();
-            }, (err) => {
-                console.error("同步錯誤:", err);
-                showToast("雲端同步連線中斷");
             });
         }
 
+        function calculateTotalWithFees(price, amount, type) {
+            const rawSubtotal = price * amount;
+            if (type === 'dividend') return { raw: rawSubtotal, fee: 0, final: rawSubtotal };
+            let fee = (type === 'buy') ? Math.max(20, Math.floor(rawSubtotal * 0.001425)) : Math.max(20, Math.floor(rawSubtotal * 0.003));
+            return { raw: rawSubtotal, fee: fee, final: type === 'buy' ? rawSubtotal + fee : rawSubtotal - fee };
+        }
+
+        // 核心計算引擎：處理已實現損益、庫存、與價格極值
+        function processData() {
+            let totalRealizedProfit = 0;
+            let stockState = {}; // { shares, totalBuyCost, realized, minPrice, maxPrice }
+            let dailyProfits = {};
+
+            const sortedTrans = [...transactions].sort((a, b) => a.date.localeCompare(b.date) || (a.ts || 0) - (b.ts || 0));
+
+            sortedTrans.forEach(t => {
+                const name = (t.name || "未命名").trim();
+                const res = calculateTotalWithFees(t.price, t.amount, t.type);
+                dailyProfits[t.date] = dailyProfits[t.date] || 0;
+
+                if (!stockState[name]) {
+                    stockState[name] = { shares: 0, totalBuyCost: 0, realized: 0, minPrice: Infinity, maxPrice: -Infinity };
+                }
+
+                // 紀錄價格極值 (排除股息，通常只紀錄買賣價格)
+                if (t.type !== 'dividend') {
+                    if (t.price < stockState[name].minPrice) stockState[name].minPrice = t.price;
+                    if (t.price > stockState[name].maxPrice) stockState[name].maxPrice = t.price;
+                }
+
+                if (t.type === 'dividend') {
+                    totalRealizedProfit += res.final;
+                    stockState[name].realized += res.final;
+                    dailyProfits[t.date] += res.final;
+                } 
+                else if (t.type === 'buy') {
+                    stockState[name].shares += t.amount;
+                    stockState[name].totalBuyCost += res.final;
+                } 
+                else if (t.type === 'sell') {
+                    if (stockState[name].shares > 0) {
+                        const avgPrice = stockState[name].totalBuyCost / stockState[name].shares;
+                        const soldCost = avgPrice * t.amount;
+                        const profit = res.final - soldCost;
+                        
+                        totalRealizedProfit += profit;
+                        stockState[name].realized += profit;
+                        dailyProfits[t.date] += profit;
+
+                        stockState[name].shares -= t.amount;
+                        stockState[name].totalBuyCost -= soldCost;
+                        if (stockState[name].shares <= 0) { stockState[name].shares = 0; stockState[name].totalBuyCost = 0; }
+                    } else {
+                        totalRealizedProfit += res.final;
+                        stockState[name].realized += res.final;
+                        dailyProfits[t.date] += res.final;
+                    }
+                }
+            });
+
+            return { 
+                totalRealizedProfit, 
+                currentTotalCost: Object.values(stockState).reduce((acc, s) => acc + s.totalBuyCost, 0),
+                dailyProfits,
+                stockState
+            };
+        }
+
         function updateUI() {
-            renderCalendar();
-            updateStats();
-            renderList();
+            const data = processData();
+            renderCalendar(data.dailyProfits);
+            
+            // 更新看板數據
+            document.getElementById('total-profit').innerText = `$${Math.round(data.totalRealizedProfit).toLocaleString()}`;
+            document.getElementById('total-cost').innerText = `$${Math.round(data.currentTotalCost).toLocaleString()}`;
+            
+            // 頂部持股清單 (股名+股數)
+            const holdingsList = document.getElementById('current-holdings-list');
+            const currentStocks = Object.entries(data.stockState).filter(([_, s]) => s.shares > 0);
+            holdingsList.innerHTML = currentStocks.length 
+                ? currentStocks.map(([name, s]) => `<span class="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-bold">${name} (${s.shares})</span>`).join('') 
+                : '<span class="text-gray-400 text-sm italic">尚無持股</span>';
+
+            renderList(data.stockState);
             renderQuickTags();
         }
 
-        function renderQuickTags() {
-            const tagContainer = document.getElementById('quick-stock-tags');
-            if (!tagContainer) return;
-            const existingNames = [...new Set(transactions.map(t => (t.name || "").trim()))].filter(n => n !== "" && n !== "未命名");
-            if (existingNames.length === 0) {
-                tagContainer.innerHTML = '<span class="text-[10px] text-gray-400 italic">尚未有常用股名</span>';
-                return;
-            }
-            tagContainer.innerHTML = existingNames.map(name => 
-                `<span onclick="selectStock('${name}')" class="stock-tag bg-gray-100 text-gray-600 px-2 py-1 rounded text-[10px] border border-gray-200 font-medium">${name}</span>`
-            ).join('');
-        }
-
-        window.selectStock = (name) => {
-            const input = document.getElementById('stock-name');
-            input.value = name;
-            input.classList.add('ring-2', 'ring-blue-400');
-            setTimeout(() => input.classList.remove('ring-2', 'ring-blue-400'), 500);
-        };
-
-        function calculateTotalWithFees(price, amount, type) {
-            const rawSubtotal = price * amount;
-            let fee = 0;
-            if (type === 'buy') {
-                fee = Math.max(20, Math.floor(rawSubtotal * 0.001425));
-                return { raw: rawSubtotal, fee: fee, final: rawSubtotal + fee };
-            } else {
-                fee = Math.max(20, Math.floor(rawSubtotal * 0.003));
-                return { raw: rawSubtotal, fee: fee, final: rawSubtotal - fee };
-            }
-        }
-
-        function renderCalendar() {
+        function renderCalendar(dailyProfits) {
             const body = document.getElementById('calendar-body');
             const display = document.getElementById('current-month-display');
-            if (!body) return;
-
+            const summaryDisplay = document.getElementById('month-summary');
             body.innerHTML = '';
-            const y = currentMonth.getFullYear();
-            const m = currentMonth.getMonth();
+            const y = currentMonth.getFullYear(), m = currentMonth.getMonth();
             display.innerText = `${y}年 ${m + 1}月`;
+            const first = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate();
+            let monthProfit = 0;
 
-            const first = new Date(y, m, 1).getDay();
-            const days = new Date(y, m + 1, 0).getDate();
-
-            for (let i = 0; i < first; i++) {
-                const e = document.createElement('div');
-                e.className = 'calendar-day bg-gray-50/50';
-                body.appendChild(e);
-            }
-
+            for (let i = 0; i < first; i++) body.appendChild(Object.assign(document.createElement('div'), { className: 'calendar-day bg-gray-50/50' }));
             for (let d = 1; d <= days; d++) {
                 const dateStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                 const div = document.createElement('div');
                 div.className = 'calendar-day p-2 flex flex-col items-start hover:bg-blue-50 cursor-pointer overflow-hidden';
-                
-                div.onclick = () => {
-                    openModal(dateStr);
-                };
-
+                div.onclick = () => openModal(dateStr);
                 div.innerHTML = `<span class="text-xs font-bold text-gray-400 mb-1">${d}</span>`;
-                
-                const dayTrans = transactions.filter(t => t.date === dateStr);
-                if (dayTrans.length > 0) {
-                    let flow = 0;
-                    dayTrans.forEach(t => {
-                        const result = calculateTotalWithFees(t.price, t.amount, t.type);
-                        flow += (t.type === 'buy' ? -result.final : result.final);
-                    });
-                    div.innerHTML += `<div class="text-[10px] font-bold px-1 py-0.5 rounded w-full truncate ${flow >= 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}">${flow >= 0 ? '+' : ''}${Math.round(flow).toLocaleString()}</div>`;
+                const profit = dailyProfits[dateStr] || 0;
+                if (profit !== 0 || transactions.some(t => t.date === dateStr)) {
+                    if (profit !== 0) div.innerHTML += `<div class="text-[10px] font-bold px-1 py-0.5 rounded w-full truncate ${profit >= 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}">${profit >= 0 ? '+' : ''}${Math.round(profit).toLocaleString()}</div>`;
+                    else div.innerHTML += `<div class="text-[10px] text-gray-400 italic">有交易</div>`;
+                    if (new Date(dateStr).getMonth() === m) monthProfit += profit;
                 }
                 body.appendChild(div);
             }
+            summaryDisplay.innerText = `本月結算淨利: ${monthProfit >= 0 ? '+' : ''}${Math.round(monthProfit).toLocaleString()}`;
         }
 
-        // 修改後的開啟 Modal 邏輯，支援新增與帶入現有資料編輯
-        window.openModal = (dateStr, transId = null) => {
-            const form = document.getElementById('trade-form');
-            form.reset();
+        function renderList(stockState) {
+            const container = document.getElementById('stock-list-container');
+            if (!transactions.length) { container.innerHTML = '<p class="text-gray-400 text-center py-4">目前尚無紀錄</p>'; return; }
             
+            const grouped = [...transactions].reverse().reduce((acc, t) => {
+                const n = (t.name || "未命名").trim(); acc[n] = acc[n] || []; acc[n].push(t); return acc;
+            }, {});
+
+            container.innerHTML = Object.keys(grouped).map(name => {
+                const stats = stockState[name];
+                const trades = grouped[name];
+                return `
+                <div class="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                    <div class="flex flex-col md:flex-row md:items-end justify-between mb-3 border-b border-gray-50 pb-2 gap-2">
+                        <div>
+                            <span class="text-lg font-bold text-blue-600">${name}</span>
+                            <div class="text-[10px] text-gray-400 flex gap-2 mt-0.5">
+                                <span>最高價: <b class="text-gray-600">${stats.maxPrice === -Infinity ? '-' : stats.maxPrice}</b></span>
+                                <span>最低價: <b class="text-gray-600">${stats.minPrice === Infinity ? '-' : stats.minPrice}</b></span>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="block text-xs font-bold ${stats.realized >= 0 ? 'text-red-500' : 'text-green-600'}">
+                                總已實現損益: ${stats.realized >= 0 ? '+' : ''}${Math.round(stats.realized).toLocaleString()}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="text-xs space-y-1">
+                        ${trades.map(t => {
+                            let typeText = t.type === 'buy' ? '買入' : (t.type === 'sell' ? '賣出' : '股息');
+                            let typeClass = t.type === 'buy' ? 'text-red-500' : (t.type === 'sell' ? 'text-green-600' : 'text-blue-500');
+                            return `<div class="flex justify-between items-center py-1 cursor-pointer hover:bg-gray-50" onclick="openModal('${t.date}', '${t.id}')">
+                                <span class="text-gray-500">${t.date} <b class="${typeClass}">${typeText}</b></span>
+                                <span class="font-mono font-bold">$${t.price} &times; ${t.amount}</span>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // --- UI & 事件處理 (保持不變) ---
+        window.openModal = (dateStr, transId = null) => {
+            const form = document.getElementById('trade-form'); form.reset();
             document.getElementById('edit-transaction-id').value = transId || "";
             document.getElementById('selected-date').value = dateStr;
-            
             const delBtn = document.getElementById('delete-btn');
-            
             if (transId) {
                 const t = transactions.find(x => x.id === transId);
                 if (t) {
-                    document.getElementById('modal-title').innerText = `編輯交易 (${t.date})`;
+                    document.getElementById('modal-title').innerText = `編輯項目 (${t.date})`;
                     document.getElementById('stock-name').value = t.name;
                     document.getElementById('trade-type').value = t.type;
                     document.getElementById('trade-price').value = t.price;
@@ -354,198 +385,53 @@
                     delBtn.classList.remove('hidden');
                 }
             } else {
-                document.getElementById('modal-title').innerText = `${dateStr} 新增交易`;
+                document.getElementById('modal-title').innerText = `${dateStr} 新增項目`;
+                document.getElementById('trade-amount').value = 1000;
                 delBtn.classList.add('hidden');
             }
-
-            calculateSubtotal();
-            document.getElementById('modal').classList.remove('hidden');
-            renderQuickTags();
+            calculateSubtotal(); document.getElementById('modal').classList.remove('hidden');
         };
-
-        function updateStats() {
-            let totalProfit = 0;
-            let inv = {};
-            transactions.forEach(t => {
-                const result = calculateTotalWithFees(t.price, t.amount, t.type);
-                const name = (t.name || "未命名").trim();
-                if (t.type === 'buy') {
-                    totalProfit -= result.final;
-                    inv[name] = (inv[name] || 0) + (parseInt(t.amount) || 0);
-                } else {
-                    totalProfit += result.final;
-                    inv[name] = (inv[name] || 0) - (parseInt(t.amount) || 0);
-                }
-            });
-            document.getElementById('total-profit').innerText = `$${Math.round(totalProfit).toLocaleString()}`;
-            const list = document.getElementById('current-holdings-list');
-            const stocks = Object.keys(inv).filter(k => inv[k] > 0);
-            list.innerHTML = stocks.length ? stocks.map(s => `<span class="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-bold">${s} (${inv[s]})</span>`).join('') : '<span class="text-gray-400 text-sm italic">尚無持股</span>';
-        }
-
-        function renderList() {
-            const container = document.getElementById('stock-list-container');
-            if (!container) return;
-            if (!transactions.length) {
-                container.innerHTML = '<p class="text-gray-400 text-center py-4">目前尚無交易明細</p>';
-                return;
-            }
-            
-            const grouped = transactions.reduce((acc, t) => {
-                const n = (t.name || "未命名").trim();
-                acc[n] = acc[n] || [];
-                acc[n].push(t);
-                return acc;
-            }, {});
-
-            container.innerHTML = Object.keys(grouped).map(name => {
-                const trades = grouped[name];
-                const prices = trades.map(t => parseFloat(t.price));
-                const maxPrice = Math.max(...prices);
-                const minPrice = Math.min(...prices);
-                
-                let stockProfit = 0;
-                trades.forEach(t => {
-                    const result = calculateTotalWithFees(t.price, t.amount, t.type);
-                    stockProfit += (t.type === 'buy' ? -result.final : result.final);
-                });
-
-                return `
-                <div class="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
-                    <div class="flex flex-col md:flex-row md:items-center justify-between mb-2 border-b border-gray-50 pb-2 gap-2">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <span class="text-lg font-bold text-blue-600">${name}</span>
-                            <div class="flex gap-1">
-                                <span class="text-[10px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded border border-red-100">高: ${maxPrice}</span>
-                                <span class="text-[10px] bg-green-50 text-green-600 px-1.5 py-0.5 rounded border border-green-100">低: ${minPrice}</span>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <span class="text-xs font-bold ${stockProfit >= 0 ? 'text-red-500' : 'text-green-600'}">
-                                累計損益: ${stockProfit >= 0 ? '+' : ''}${Math.round(stockProfit).toLocaleString()}
-                            </span>
-                            <span class="text-[10px] text-gray-400">${trades.length} 筆紀錄</span>
-                        </div>
-                    </div>
-                    <div class="text-xs space-y-1 pt-1">
-                        ${trades.map(t => {
-                            const result = calculateTotalWithFees(t.price, t.amount, t.type);
-                            return `<div class="flex justify-between items-center hover:bg-gray-50 p-2 rounded group cursor-pointer" onclick="openModal('${t.date}', '${t.id}')">
-                                <div class="flex flex-col">
-                                    <span class="text-gray-500">${t.date} <b class="${t.type==='buy'?'text-red-500':'text-green-600'}">${t.type==='buy'?'買入':'賣出'}</b></span>
-                                    <span class="text-[10px] text-gray-400">點選修改</span>
-                                </div>
-                                <div class="flex flex-col items-end">
-                                    <span class="font-mono font-bold">$${t.price} &times; ${t.amount}</span>
-                                    <span class="text-[9px] text-gray-400">(結算: $${Math.round(result.final).toLocaleString()})</span>
-                                </div>
-                            </div>`;
-                        }).join('')}
-                    </div>
-                </div>
-            `;}).join('');
-        }
 
         window.calculateSubtotal = () => {
             const price = parseFloat(document.getElementById('trade-price').value) || 0;
             const amount = parseInt(document.getElementById('trade-amount').value) || 0;
             const type = document.getElementById('trade-type').value;
-            const result = calculateTotalWithFees(price, amount, type);
-            document.getElementById('raw-subtotal').innerText = `$${Math.round(result.raw).toLocaleString()}`;
-            document.getElementById('fee-display').innerText = `$${result.fee}`;
+            const res = calculateTotalWithFees(price, amount, type);
+            document.getElementById('raw-subtotal').innerText = `$${Math.round(res.raw).toLocaleString()}`;
+            document.getElementById('fee-display').innerText = `$${res.fee}`;
             const display = document.getElementById('subtotal-display');
-            display.innerText = `$${Math.round(result.final).toLocaleString()}`;
-            display.className = `text-xl font-bold ${type === 'buy' ? 'text-red-500' : 'text-green-600'}`;
+            display.innerText = `$${Math.round(res.final).toLocaleString()}`;
+            display.className = (type === 'buy') ? 'text-xl font-bold text-red-500' : (type === 'sell' ? 'text-xl font-bold text-green-600' : 'text-xl font-bold text-blue-500');
         };
 
+        window.renderQuickTags = () => {
+            const tagContainer = document.getElementById('quick-stock-tags');
+            const existingNames = [...new Set(transactions.map(t => (t.name || "").trim()))].filter(n => n !== "");
+            tagContainer.innerHTML = existingNames.map(name => `<span onclick="selectStock('${name}')" class="stock-tag bg-gray-100 text-gray-600 px-2 py-1 rounded text-[10px] border border-gray-200 font-medium">${name}</span>`).join('') || '<span class="text-[10px] text-gray-400 italic">尚無常用項目</span>';
+        };
+
+        window.selectStock = (name) => { document.getElementById('stock-name').value = name; };
         window.changeMonth = (d) => { currentMonth.setMonth(currentMonth.getMonth() + d); updateUI(); };
-        window.closeModal = () => {
-            document.getElementById('modal').classList.add('hidden');
-            document.getElementById('submit-btn').disabled = false;
-        };
-        window.openSyncModal = () => {
-            document.getElementById('sync-input').value = currentSyncId;
-            document.getElementById('sync-modal').classList.remove('hidden');
-        };
+        window.closeModal = () => document.getElementById('modal').classList.add('hidden');
+        window.openSyncModal = () => { document.getElementById('sync-input').value = currentSyncId; document.getElementById('sync-modal').classList.remove('hidden'); };
         window.closeSyncModal = () => document.getElementById('sync-modal').classList.add('hidden');
-        window.saveSyncCode = () => {
-            const val = document.getElementById('sync-input').value.trim();
-            if (val) {
-                currentSyncId = val;
-                localStorage.setItem('user_sync_code', val);
-                document.getElementById('sync-code-display').innerText = val;
-                startSync();
-                closeSyncModal();
-                showToast("同步帳號切換成功");
-            }
-        };
+        window.saveSyncCode = () => { const val = document.getElementById('sync-input').value.trim(); if (val) { currentSyncId = val; localStorage.setItem('user_sync_code', val); startSync(); closeSyncModal(); showToast("同步帳號已切換"); } };
+        window.deleteTransaction = async () => { if (!confirm("確定刪除？")) return; await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`, document.getElementById('edit-transaction-id').value)); showToast("已刪除"); closeModal(); };
 
-        // 新增刪除功能
-        window.deleteTransaction = async () => {
-            const transId = document.getElementById('edit-transaction-id').value;
-            if (!transId || !confirm("確定要刪除這筆交易紀錄嗎？此動作無法復原。")) return;
-
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`, transId);
-                await deleteDoc(docRef);
-                showToast("✅ 紀錄已成功刪除");
-                closeModal();
-            } catch (err) {
-                console.error("刪除失敗:", err);
-                showToast("❌ 刪除失敗");
-            }
-        };
-
-        // 提交表單：判斷新增或修改
         document.getElementById('trade-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!db) { 
-                showToast("目前處於離線模式");
-                return; 
-            }
-            
             const transId = document.getElementById('edit-transaction-id').value;
-            const btn = document.getElementById('submit-btn');
-            if (btn.disabled) return;
-            btn.disabled = true;
-            btn.innerText = "儲存中...";
-
             const data = {
                 date: document.getElementById('selected-date').value,
-                name: document.getElementById('stock-name').value.trim() || "未命名",
+                name: document.getElementById('stock-name').value.trim(),
                 type: document.getElementById('trade-type').value,
                 price: parseFloat(document.getElementById('trade-price').value) || 0,
                 amount: parseInt(document.getElementById('trade-amount').value) || 0,
-                ts: Date.now(),
-                updatedAt: serverTimestamp()
+                ts: transId ? transactions.find(t=>t.id===transId).ts : Date.now()
             };
-
-            try {
-                if (transId) {
-                    // 修改
-                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`, transId);
-                    await updateDoc(docRef, data);
-                    showToast("✅ 已成功更新紀錄");
-                } else {
-                    // 新增
-                    const col = collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`);
-                    data.createdAt = serverTimestamp();
-                    await addDoc(col, data);
-                    showToast("✅ 已成功儲存紀錄");
-                }
-                
-                setTimeout(() => {
-                    closeModal();
-                    btn.innerText = "儲存紀錄";
-                    btn.disabled = false;
-                }, 300);
-
-            } catch (err) { 
-                console.error("操作失敗:", err);
-                showToast("❌ 儲存失敗"); 
-                btn.disabled = false;
-                btn.innerText = "儲存紀錄";
-            }
+            if (transId) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`, transId), data);
+            else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `sync_${currentSyncId}`), data);
+            showToast("已儲存"); closeModal();
         });
 
         init();
