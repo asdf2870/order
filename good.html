@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股市交易紀錄與損益看板 (強化明細版)</title>
+    <title>股市交易紀錄與損益看板 (摺疊明細版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
@@ -15,6 +15,12 @@
         .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.95); display: flex; align-items: center; justify-content: center; z-index: 100; flex-direction: column; }
         .stock-tag { cursor: pointer; transition: all 0.2s; }
         .stock-tag:hover { background-color: #dbeafe; color: #1e40af; border-color: #3b82f6; }
+        
+        /* 摺疊動畫 */
+        .details-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
+        .stock-card.active .details-content { max-height: 1000px; transition: max-height 0.5s ease-in; }
+        .stock-card.active .arrow-icon { transform: rotate(180deg); }
+        .arrow-icon { transition: transform 0.3s; }
     </style>
 </head>
 <body class="p-4 md:p-8 pb-20">
@@ -74,9 +80,10 @@
             <div id="calendar-body" class="calendar-grid"></div>
         </div>
 
+        <!-- 交易明細清單 -->
         <div class="bg-white rounded-2xl custom-shadow p-6">
             <div class="flex justify-between items-center mb-6">
-                <h3 class="text-xl font-bold text-gray-800">歷史交易明細表 (含個股統計)</h3>
+                <h3 class="text-xl font-bold text-gray-800">歷史交易明細表 (點擊展開明細)</h3>
                 <div class="text-[10px] text-gray-400">同步碼: <span id="sync-code-display" class="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600 italic">尚未設定</span></div>
             </div>
             <div id="stock-list-container" class="space-y-4">
@@ -219,10 +226,9 @@
             return { raw: rawSubtotal, fee: fee, final: type === 'buy' ? rawSubtotal + fee : rawSubtotal - fee };
         }
 
-        // 核心計算引擎：處理已實現損益、庫存、與價格極值
         function processData() {
             let totalRealizedProfit = 0;
-            let stockState = {}; // { shares, totalBuyCost, realized, minPrice, maxPrice }
+            let stockState = {}; 
             let dailyProfits = {};
 
             const sortedTrans = [...transactions].sort((a, b) => a.date.localeCompare(b.date) || (a.ts || 0) - (b.ts || 0));
@@ -236,7 +242,6 @@
                     stockState[name] = { shares: 0, totalBuyCost: 0, realized: 0, minPrice: Infinity, maxPrice: -Infinity };
                 }
 
-                // 紀錄價格極值 (排除股息，通常只紀錄買賣價格)
                 if (t.type !== 'dividend') {
                     if (t.price < stockState[name].minPrice) stockState[name].minPrice = t.price;
                     if (t.price > stockState[name].maxPrice) stockState[name].maxPrice = t.price;
@@ -272,23 +277,15 @@
                 }
             });
 
-            return { 
-                totalRealizedProfit, 
-                currentTotalCost: Object.values(stockState).reduce((acc, s) => acc + s.totalBuyCost, 0),
-                dailyProfits,
-                stockState
-            };
+            return { totalRealizedProfit, currentTotalCost: Object.values(stockState).reduce((acc, s) => acc + s.totalBuyCost, 0), dailyProfits, stockState };
         }
 
         function updateUI() {
             const data = processData();
             renderCalendar(data.dailyProfits);
-            
-            // 更新看板數據
             document.getElementById('total-profit').innerText = `$${Math.round(data.totalRealizedProfit).toLocaleString()}`;
             document.getElementById('total-cost').innerText = `$${Math.round(data.currentTotalCost).toLocaleString()}`;
             
-            // 頂部持股清單 (股名+股數)
             const holdingsList = document.getElementById('current-holdings-list');
             const currentStocks = Object.entries(data.stockState).filter(([_, s]) => s.shares > 0);
             holdingsList.innerHTML = currentStocks.length 
@@ -339,36 +336,44 @@
                 const stats = stockState[name];
                 const trades = grouped[name];
                 return `
-                <div class="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
-                    <div class="flex flex-col md:flex-row md:items-end justify-between mb-3 border-b border-gray-50 pb-2 gap-2">
-                        <div>
+                <div class="stock-card bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden" id="card-${name}">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition" onclick="toggleCard('${name}')">
+                        <div class="flex items-center gap-3">
                             <span class="text-lg font-bold text-blue-600">${name}</span>
-                            <div class="text-[10px] text-gray-400 flex gap-2 mt-0.5">
-                                <span>最高價: <b class="text-gray-600">${stats.maxPrice === -Infinity ? '-' : stats.maxPrice}</b></span>
-                                <span>最低價: <b class="text-gray-600">${stats.minPrice === Infinity ? '-' : stats.minPrice}</b></span>
+                            <div class="text-[10px] text-gray-400 flex gap-2">
+                                <span>最高: <b class="text-gray-600">${stats.maxPrice === -Infinity ? '-' : stats.maxPrice}</b></span>
+                                <span>最低: <b class="text-gray-600">${stats.minPrice === Infinity ? '-' : stats.minPrice}</b></span>
                             </div>
                         </div>
-                        <div class="text-right">
-                            <span class="block text-xs font-bold ${stats.realized >= 0 ? 'text-red-500' : 'text-green-600'}">
-                                總已實現損益: ${stats.realized >= 0 ? '+' : ''}${Math.round(stats.realized).toLocaleString()}
+                        <div class="flex items-center gap-4 text-right">
+                            <span class="text-xs font-bold ${stats.realized >= 0 ? 'text-red-500' : 'text-green-600'}">
+                                損益: ${stats.realized >= 0 ? '+' : ''}${Math.round(stats.realized).toLocaleString()}
                             </span>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="arrow-icon h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" /></svg>
                         </div>
                     </div>
-                    <div class="text-xs space-y-1">
-                        ${trades.map(t => {
-                            let typeText = t.type === 'buy' ? '買入' : (t.type === 'sell' ? '賣出' : '股息');
-                            let typeClass = t.type === 'buy' ? 'text-red-500' : (t.type === 'sell' ? 'text-green-600' : 'text-blue-500');
-                            return `<div class="flex justify-between items-center py-1 cursor-pointer hover:bg-gray-50" onclick="openModal('${t.date}', '${t.id}')">
-                                <span class="text-gray-500">${t.date} <b class="${typeClass}">${typeText}</b></span>
-                                <span class="font-mono font-bold">$${t.price} &times; ${t.amount}</span>
-                            </div>`;
-                        }).join('')}
+                    <div class="details-content bg-gray-50/50">
+                        <div class="p-4 pt-0 border-t border-gray-50 text-xs space-y-1">
+                            <div class="py-2 text-[10px] text-gray-400 font-bold uppercase tracking-widest border-b border-gray-100 mb-1">歷史明細紀錄</div>
+                            ${trades.map(t => {
+                                let typeText = t.type === 'buy' ? '買入' : (t.type === 'sell' ? '賣出' : '股息');
+                                let typeClass = t.type === 'buy' ? 'text-red-500' : (t.type === 'sell' ? 'text-green-600' : 'text-blue-500');
+                                return `<div class="flex justify-between items-center py-2 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-white px-2 rounded" onclick="openModal('${t.date}', '${t.id}')">
+                                    <span class="text-gray-500">${t.date} <b class="${typeClass}">${typeText}</b></span>
+                                    <span class="font-mono font-bold text-gray-700">$${t.price} &times; ${t.amount}</span>
+                                </div>`;
+                            }).join('')}
+                        </div>
                     </div>
                 </div>`;
             }).join('');
         }
 
-        // --- UI & 事件處理 (保持不變) ---
+        window.toggleCard = (name) => {
+            const card = document.getElementById(`card-${name}`);
+            card.classList.toggle('active');
+        };
+
         window.openModal = (dateStr, transId = null) => {
             const form = document.getElementById('trade-form'); form.reset();
             document.getElementById('edit-transaction-id').value = transId || "";
